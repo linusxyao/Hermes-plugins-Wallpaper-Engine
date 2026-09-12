@@ -8,7 +8,10 @@
 
 Render your local **Wallpaper Engine** wallpapers (video + scene main-textures + still images) behind the Hermes desktop chat, with an in-app picker page, six live-adjustable sliders, and a frosted-glass chat styling suite. Inspired by [dsh-plugin-wallpaper-engine](https://github.com/elysia395/dsh-wallpaper-engine) (MIT), rebuilt natively on the Hermes desktop plugin SDK. **Zero core-source modification** — every file lives under the user data directory (`~/.hermes`); disabling or deleting the plugin restores the original look instantly.
 
-**Quick install:** copy `dashboard/` → `~/.hermes/plugins/hermes-wallpaper-engine/` and `desktop/plugin.js` → `~/.hermes/desktop-plugins/hermes-wallpaper-engine/`, then restart Hermes. Requires Wallpaper Engine + Steam workshop content (auto-discovered via `libraryfolders.vdf`); without WE you can still use the built-in upload button (jpg/png/webp/gif/mp4/webm). Windows-only because thumbnails/downscaling use the built-in PowerShell + System.Drawing — which also means zero third-party dependencies.
+**Quick install:** one PowerShell command, no manual copying —
+`iwr -useb https://raw.githubusercontent.com/linusxyao/Hermes-plugins-Wallpaper-Engine/main/install.ps1 | iex`
+(locates your Hermes data dir, downloads the repo, deploys both halves; re-run to upgrade, `-Uninstall` to remove).
+Or manually: copy `dashboard/` → `~/.hermes/plugins/hermes-wallpaper-engine/` and `desktop/plugin.js` → `~/.hermes/desktop-plugins/hermes-wallpaper-engine/`, then restart Hermes. Requires Wallpaper Engine + Steam workshop content (auto-discovered via `libraryfolders.vdf`); without WE you can still use the built-in upload button (jpg/png/webp/gif/mp4/webm). Windows-only because thumbnails/downscaling use the built-in PowerShell + System.Drawing — which also means zero third-party dependencies.
 
 **Capabilities** (declared 1:1 with the catalog entry): one sidebar route + one command-palette entry; plugin-namespaced REST routes (`/wallpapers`, `/resolve`, `/media`, `/thumbnails`, `/upload`, `/upload/delete`); one injected DOM backdrop layer; injected chat-frost stylesheets. No tools, no agent-loop hooks, no middleware, no env vars, no network egress beyond the local Hermes gateway.
 
@@ -49,7 +52,18 @@ Hermes-plugins-Wallpaper-Engine/
 
 ## 安装
 
-把两个半区分别放进用户数据目录（Windows 为 `%LOCALAPPDATA%\hermes\`，即 `~/.hermes`）：
+**方式一（推荐，朋友间分发用）：一条命令自动安装**——在朋友电脑上打开 PowerShell 执行：
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/linusxyao/Hermes-plugins-Wallpaper-Engine/main/install.ps1 | iex
+```
+
+脚本自动定位 Hermes 数据目录（`$env:HERMES_HOME` → `%LOCALAPPDATA%\hermes` → `~/.hermes`）、
+从 GitHub 下载仓库、部署两个半区；重复执行即升级（旧版自动备份，用户上传的壁纸自动迁回）；
+`.\install.ps1 -Uninstall` 一键卸载。已 clone 仓库的话直接在仓库里跑 `install.ps1` 也行。
+
+**方式二（手动）：** 把两个半区分别放进用户数据目录（Windows 为
+`%LOCALAPPDATA%\hermes\`，即 `~/.hermes`）：
 
 ```
 dashboard/*    →  ~/.hermes/plugins/hermes-wallpaper-engine/dashboard/

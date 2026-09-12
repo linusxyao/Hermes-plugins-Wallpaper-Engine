@@ -1060,6 +1060,39 @@ function frostCss(compA, tlA) {
     /* 弹出浮层家族（对话框/下拉菜单/选择菜单/滚动时间线悬停窗）：核心同一规则
        画死 96% elevated 底。一根滑条统一驱动 alpha；核心自带 backdrop 模糊保留。
        键名沿用 timelineAlpha（持久化兼容），语义已扩为"全部浮层"。 */
+    /* 会话标签的悬浮关闭按钮✕（用户 2026-09-12：✕ 跟文字贴太近）。核心机制：
+       hover 时对文字右缘做渐隐遮罩、✕ 占据右侧 --pane-tab-close-width。
+       插件只调参数不碰结构：加宽 ✕ 区域（1.5→1.9rem，字形中心离文字更远）、
+       渐隐带拉长（1→1.35rem，文字消得更早更柔和）、✕ 变圆底胶囊并
+       距右缘留 3px 呼吸位。 */
+    :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable] {
+      --pane-tab-close-width: 1.9rem;
+    }
+    :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable]:hover > .pane-tab-content {
+      -webkit-mask-image: linear-gradient(
+        to right,
+        #000 calc(100% - var(--pane-tab-close-width) - 1.35rem),
+        transparent calc(100% - var(--pane-tab-close-width))
+      );
+      mask-image: linear-gradient(
+        to right,
+        #000 calc(100% - var(--pane-tab-close-width) - 1.35rem),
+        transparent calc(100% - var(--pane-tab-close-width))
+      );
+    }
+    /* ✕ 本体：核心按钮宽度挂在任意值类 w-(--pane-tab-close-width) 上，
+       用 class 子串精确锚定（比 .pointer-events-none 之类通用类安全），
+       改成圆底胶囊 + 距右缘 3px 呼吸位 + hover 圆片反馈。 */
+    :root[data-hermes-glass] [data-slot='pane-tab'] button[class*='pane-tab-close-width'] {
+      width: calc(var(--pane-tab-close-width) - 6px);
+      border-radius: 9999px;
+      margin: 3px;  /* 四边留呼吸位：圆片不满高，hover 反馈才像个悬浮胶囊 */
+      transition: background-color 120ms ease, color 120ms ease;
+    }
+    :root[data-hermes-glass] [data-slot='pane-tab'] button[class*='pane-tab-close-width']:hover {
+      background: color-mix(in srgb, currentColor 18%, transparent) !important;
+      color: var(--ui-text-primary);
+    }
     /* 会话翻页时的"滚动到底部/↓N 新消息"胶囊（.thread-jump-button）：核心用
        --composer-fill 上色（跟着输入框滑条偷偷走，用户 2026-09-12 才发现它）。
        显式收编进悬浮窗家族，语义归位。 */

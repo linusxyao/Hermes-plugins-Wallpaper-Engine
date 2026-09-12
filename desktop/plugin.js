@@ -1060,6 +1060,12 @@ function frostCss(compA, tlA) {
     /* 弹出浮层家族（对话框/下拉菜单/选择菜单/滚动时间线悬停窗）：核心同一规则
        画死 96% elevated 底。一根滑条统一驱动 alpha；核心自带 backdrop 模糊保留。
        键名沿用 timelineAlpha（持久化兼容），语义已扩为"全部浮层"。 */
+    /* 会话翻页时的"滚动到底部/↓N 新消息"胶囊（.thread-jump-button）：核心用
+       --composer-fill 上色（跟着输入框滑条偷偷走，用户 2026-09-12 才发现它）。
+       显式收编进悬浮窗家族，语义归位。 */
+    :root[data-hermes-glass] .thread-jump-button {
+      background: color-mix(in srgb, var(--ui-bg-elevated) ${tl}%, transparent) !important;
+    }
     :root[data-hermes-glass] [data-slot='thread-timeline-popover'],
     :root[data-hermes-glass] [data-slot='dialog-content'],
     :root[data-hermes-glass] [data-slot='dropdown-menu-content'],

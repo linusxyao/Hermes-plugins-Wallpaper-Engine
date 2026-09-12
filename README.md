@@ -1,47 +1,42 @@
 # Hermes Wallpaper Engine Plugin（hermes-wallpaper-engine）
 
-> **Platform: Windows only** · License: MIT · Hermes ≥ desktop plugin SDK (2026-09 builds)
->
-> Render your local **Wallpaper Engine** wallpapers (video + scene main-textures
-> + still images) behind the Hermes desktop chat, with an in-app picker page,
-> six live-adjustable sliders, and a frosted-glass chat styling suite. Inspired
-> by [dsh-plugin-wallpaper-engine](https://github.com/elysia395/dsh-wallpaper-engine)
-> (MIT), rebuilt natively on the Hermes desktop plugin SDK. **Zero core-source
-> modification** — every file lives under the user data directory (`~/.hermes`);
-> disabling or deleting the plugin restores the app to its original look.
->
-> Install: copy `dashboard/` → `~/.hermes/plugins/hermes-wallpaper-engine/` and
-> `desktop/plugin.js` → `~/.hermes/desktop-plugins/hermes-wallpaper-engine/`, then
-> restart Hermes. Requires Wallpaper Engine + Steam workshop content (auto-discovered
-> via `libraryfolders.vdf`), or use the built-in upload button for custom media.
-> Thumbnails/downscaling use Windows built-in PowerShell + System.Drawing — no
-> third-party dependencies, and the reason the plugin is Windows-only.
->
-> Capabilities (as declared to the catalog): sidebar route + command-palette entry,
-> plugin-scoped REST routes (`/wallpapers`, `/resolve`, `/media`, `/thumbnails`,
-> `/upload`, `/upload/delete`), one injected DOM backdrop layer, injected chat-frost
-> stylesheets. No tools, no hooks into the agent loop, no env vars, no network
-> egress beyond the local Hermes gateway.
->
-> 以下为完整中文文档。
+[English](#english) · [简体中文](#简体中文)
+
+## English
+
+> **Platform: Windows only** · **License: MIT** · Hermes desktop plugin SDK (2026-09 builds)
+
+Render your local **Wallpaper Engine** wallpapers (video + scene main-textures + still images) behind the Hermes desktop chat, with an in-app picker page, six live-adjustable sliders, and a frosted-glass chat styling suite. Inspired by [dsh-plugin-wallpaper-engine](https://github.com/elysia395/dsh-wallpaper-engine) (MIT), rebuilt natively on the Hermes desktop plugin SDK. **Zero core-source modification** — every file lives under the user data directory (`~/.hermes`); disabling or deleting the plugin restores the original look instantly.
+
+**Quick install:** copy `dashboard/` → `~/.hermes/plugins/hermes-wallpaper-engine/` and `desktop/plugin.js` → `~/.hermes/desktop-plugins/hermes-wallpaper-engine/`, then restart Hermes. Requires Wallpaper Engine + Steam workshop content (auto-discovered via `libraryfolders.vdf`); without WE you can still use the built-in upload button (jpg/png/webp/gif/mp4/webm). Windows-only because thumbnails/downscaling use the built-in PowerShell + System.Drawing — which also means zero third-party dependencies.
+
+**Capabilities** (declared 1:1 with the catalog entry): one sidebar route + one command-palette entry; plugin-namespaced REST routes (`/wallpapers`, `/resolve`, `/media`, `/thumbnails`, `/upload`, `/upload/delete`); one injected DOM backdrop layer; injected chat-frost stylesheets. No tools, no agent-loop hooks, no middleware, no env vars, no network egress beyond the local Hermes gateway.
+
+Full documentation below is in Chinese. 建议先读"功能一览"与"已知边界"两节。
 
 ---
 
-把本机 **Wallpaper Engine** 的壁纸（视频 + 场景主纹理 + 静态图）铺到 Hermes 桌面端
-聊天界面后方，附带应用内选页、六类可调滑条、聊天区磨砂美化套件。
+## 简体中文
 
-灵感来自 [dsh-plugin-wallpaper-engine](https://github.com/elysia395/dsh-wallpaper-engine)
-（MIT），为 Hermes 桌面插件 SDK 全新实现。**零侵入 Hermes 源码**：所有文件都在用户数据
-目录内，禁用/删除即完全还原。
+> **适用平台：仅 Windows** · **许可证：MIT** · 基于 Hermes 桌面插件 SDK（2026-09 版本）
 
-> ⚠ **适用平台：仅 Windows**。缩略图与大图降采样依赖 Windows 自带的
-> PowerShell + System.Drawing，无第三方依赖，但也因此不可移植到 macOS/Linux。
+把本机 **Wallpaper Engine** 的壁纸（视频 + 场景主纹理 + 静态图）铺到 Hermes 桌面端聊天界面后方，附带应用内选页、六根实时滑条、聊天区磨砂美化套件。灵感来自 [dsh-plugin-wallpaper-engine](https://github.com/elysia395/dsh-wallpaper-engine)（MIT），为 Hermes 桌面插件 SDK 全新实现。**零侵入 Hermes 核心源码**——所有文件都在用户数据目录内，禁用或删除插件即刻完全还原原始外观。
+
+**快速安装**：`dashboard/` → `~/.hermes/plugins/hermes-wallpaper-engine/`、`desktop/plugin.js` → `~/.hermes/desktop-plugins/hermes-wallpaper-engine/`，然后重启 Hermes。需要本机装有 Wallpaper Engine 且 Steam 工坊有壁纸（经 `libraryfolders.vdf` 自动发现）；没有 WE 也能用内置的上传壁纸功能（jpg/png/webp/gif/mp4/webm）。仅支持 Windows 的原因是缩略图与大图降采样依赖系统自带的 PowerShell + System.Drawing——也因此零第三方依赖。
+
+**能力声明**（与目录条目一字对应）：侧栏路由与命令面板入口各一；插件命名空间 REST 路由（`/wallpapers`、`/resolve`、`/media`、`/thumbnails`、`/upload`、`/upload/delete`）；注入一个壁纸 DOM 层与聊天磨砂样式表。无 tools、无 agent 循环 hook、无中间件、无环境变量，除本地 Hermes 网关外零网络请求。
+
+以下为完整中文文档。
+
+---
 
 ## 目录结构
 
 ```
 Hermes-plugins-Wallpaper-Engine/
 ├── README.md                 本文件
+├── LICENSE                   MIT
+├── catalog-entry/            官方插件目录的 YAML 条目草稿（提交素材，不随插件运行）
 ├── dashboard/                Python 后端（FastAPI，由 Hermes serve 挂载到
 │   │                         /api/plugins/hermes-wallpaper-engine/）
 │   ├── plugin_api.py         路由 + 壁纸扫描 + 场景主纹理提取 + 大图降采样

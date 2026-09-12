@@ -1128,6 +1128,13 @@ function frostCss(compA, tlA) {
       /* !important 加固：自定义属性声明同样可加，防核心样式表晚加载/同源特异度竞争 */
       --pane-tab-close-width: 1.9rem !important;
     }
+    /* 根治（用户诊断：标签太窄没给✕留位）：给内容区【永久】预留 ✕ 槽位——
+       padding-right 把文字截断线整体推到 ✕ 区之外，文字永远不可能贴到 ✕；
+       渐变遮罩从"唯一的让位手段"降级为锦上添花的柔化收尾。此前只在 :hover
+       时遮罩，非悬停时文字本来就可以压进 ✕ 区，一 hover ✕ 直接叠字上。 */
+    :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable] > .pane-tab-content {
+      padding-right: calc(var(--pane-tab-close-width) + 4px) !important;
+    }
     :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable]:hover > .pane-tab-content {
       -webkit-mask-image: linear-gradient(
         to right,

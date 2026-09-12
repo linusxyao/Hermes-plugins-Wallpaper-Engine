@@ -218,6 +218,9 @@ def scan_wallpapers() -> dict[str, Any]:
             if source == "uploads" and child.is_file():
                 # 平铺式上传文件：一个媒体文件 = 一条壁纸记录。
                 ext = child.suffix.lower()
+                # （扫描本身就只收录真实存在的文件：用户在资源管理器里直接删
+                #  uploads 文件不会留死条目；20s 缓存窗口内可能短暂显示死卡，
+                #  点开会 resolve 失败并提示，缓存过期自动消失——可接受。）
                 if ext not in VIDEO_EXTENSIONS and ext not in IMAGE_EXTENSIONS:
                     continue
                 entries.append({
@@ -408,10 +411,14 @@ def _path_is_safe(candidate: str) -> bool:
 def inventory(
     type: Optional[str] = Query(default=None),
     rating: Optional[str] = Query(default=None),
+    src: Optional[str] = Query(default=None),
     limit: int = Query(default=0),
 ) -> dict:
     inv = scan_wallpapers()
     items = inv["wallpapers"]  # uploads 已由扫描器纳入（scan_dirs 含 UPLOAD_DIR），不再双路拼接
+    if src and src != "all":
+        # 来源档（uploads=本地上传的分类管理入口；workshop/myprojects=WE 库）
+        items = [w for w in items if w.get("source") == src]
     if type:
         items = [w for w in items if w["type"] == type]
     if rating and rating != "all":
@@ -463,16 +470,23 @@ async def upload(file: fastapi.UploadFile = File(...)) -> dict:
 
 @router.post("/upload/delete")
 def upload_delete(payload: dict | None = None) -> dict:
-    """删除已上传的壁纸文件（只允许删 uploads 目录，工坊目录绝不允许）。"""
+    """删除已上传的壁纸文件。只接受清单 id：路径从扫描结果里取（前端不接触
+    文件系统路径，也无法伪造指向工坊目录）；再强制校验目标必须在 UPLOAD_DIR
+    内——工坊壁纸绝不可能被本接口删掉。"""
     payload = payload or {}
-    name = os.path.basename(str(payload.get("name") or ""))
-    dest = UPLOAD_DIR / name
-    if not dest.resolve().is_relative_to(UPLOAD_DIR.resolve()) or not dest.is_file():
+    wid = str(payload.get("id") or "")
+    inv = scan_wallpapers()
+    entry = next((w for w in inv["wallpapers"] if w.get("id") == wid and w.get("source") == "uploads"), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail="upload not found")
+    raw = entry.get("mediaPath") or entry.get("previewPath") or ""
+    dest = Path(raw).resolve()
+    if not dest.is_relative_to(UPLOAD_DIR.resolve()) or not dest.is_file():
         raise HTTPException(status_code=404, detail="upload not found")
     dest.unlink()
     global _SCAN_CACHE
     _SCAN_CACHE = None  # 删除后立刻重扫：否则网格会挂着死卡片最长 20 秒，点开必报错
-    return {"ok": True}
+    return {"ok": True, "name": dest.name}
 
 
 @router.get("/inventory/previews")

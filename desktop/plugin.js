@@ -443,7 +443,9 @@ const L = {
     posLabel: '位置', scaleLabel: '缩放',
     typeAll: '全部类型', typeVideo: '视频', typeScene: '图片',
     ratingAll: '全部分级', ratingEveryone: '所有人', ratingUnrated: '未分级', ratingMature: '成人',
-    filter: '筛选', upload: '上传壁纸', hudUploaded: '上传成功，正在壁纸库中定位…',
+    filter: '筛选', upload: '上传壁纸', srcAll: '全部来源', srcUploads: '本地上传', srcWE: '壁纸库',
+    delTip: '删除此上传壁纸', delConfirm: '再点一次确认删除', delDone: '已删除', delFail: '删除失败: ',
+    hudUploaded: '上传成功，正在壁纸库中定位…',
     hudLocated: 'Hermes 已定位到上传后的壁纸位置，即将显示壁纸所在目录…',
     hudOpened: '已在资源管理器中打开壁纸所在目录',
     hudNotAuto: '未自动更换当前壁纸 — 点击高亮的卡片即可应用',
@@ -462,7 +464,9 @@ const L = {
     posLabel: 'Position', scaleLabel: 'Scale',
     typeAll: 'All types', typeVideo: 'Video', typeScene: 'Image',
     ratingAll: 'All ratings', ratingEveryone: 'Everyone', ratingUnrated: 'Unrated', ratingMature: 'Mature',
-    filter: 'Filter', upload: 'Upload', hudUploaded: 'Uploaded — locating it in the library…',
+    filter: 'Filter', upload: 'Upload', srcAll: 'All sources', srcUploads: 'Local uploads', srcWE: 'Wallpaper library',
+    delTip: 'Delete this upload', delConfirm: 'Click again to confirm', delDone: 'Deleted', delFail: 'Delete failed: ',
+    hudUploaded: 'Uploaded — locating it in the library…',
     hudLocated: 'Located the uploaded wallpaper — opening its folder…',
     hudOpened: 'Folder opened in your file manager',
     hudNotAuto: 'Your current wallpaper was NOT changed — click the highlighted card to apply',
@@ -481,7 +485,9 @@ const L = {
     posLabel: '位置', scaleLabel: 'サイズ',
     typeAll: 'すべてのタイプ', typeVideo: '動画', typeScene: '画像',
     ratingAll: 'すべてのレーティング', ratingEveryone: '全ユーザー', ratingUnrated: '未評価', ratingMature: '成人向け',
-    filter: 'フィルター', upload: 'アップロード', hudUploaded: 'アップロード成功 — ライブラリを検索中…',
+    filter: 'フィルター', upload: 'アップロード', srcAll: 'すべての来源', srcUploads: 'ローカル追加', srcWE: '壁紙ライブラリ',
+    delTip: 'この壁紙を削除', delConfirm: 'もう一度クリックで確定', delDone: '削除しました', delFail: '削除失敗: ',
+    hudUploaded: 'アップロード成功 — ライブラリを検索中…',
     hudLocated: 'アップロードした壁紙を見つけました — 保存フォルダを開きます…',
     hudOpened: '保存フォルダをファイルマネージャーで開きました',
     hudNotAuto: '現在の壁紙は変更されていません — ハイライトされたカードをクリックで適用',
@@ -500,7 +506,9 @@ const L = {
     posLabel: '위치', scaleLabel: '크기',
     typeAll: '전체 유형', typeVideo: '동영상', typeScene: '이미지',
     ratingAll: '전체 등급', ratingEveryone: '전체 이용가', ratingUnrated: '미분류', ratingMature: '성인용',
-    filter: '필터', upload: '업로드', hudUploaded: '업로드 성공 — 라이브러리에서 찾는 중…',
+    filter: '필터', upload: '업로드', srcAll: '전체 소스', srcUploads: '로컬 업로드', srcWE: '벽지 라이브러리',
+    delTip: '이 벽지 삭제', delConfirm: '한 번 더 클릭하면 삭제', delDone: '삭제됨', delFail: '삭제 실패: ',
+    hudUploaded: '업로드 성공 — 라이브러리에서 찾는 중…',
     hudLocated: '업로드한 벽지를 찾았습니다 — 보관 폴더를 엽니다…',
     hudOpened: '파일 탐색기에서 보관 폴더를 열었습니다',
     hudNotAuto: '현재 벽지는 변경되지 않았습니다 — 강조된 카드를 클릭하면 적용됩니다',
@@ -706,6 +714,7 @@ function WallpaperPicker({ mode }) {
   // Filters live in the persisted settings (user: 重启后要记得上次选的分级/类型)
   const typeFilter = s.typeFilter || 'all'
   const ratingFilter = s.ratingFilter || 'all'
+  const srcFilter = s.srcFilter || 'all'
   const setTypeFilter = v => setSettings({ ...s, typeFilter: v })
   const setRatingFilter = v => setSettings({ ...s, ratingFilter: v })
   const [page, setPage] = useState(1)
@@ -717,6 +726,8 @@ function WallpaperPicker({ mode }) {
 
   const filtered = inv.wallpapers
     .filter(w => !s.hidden.includes(w.id))
+    // 来源档：本地上传单独成类（便于管理）；『壁纸库』= WE 工坊/自制项目
+    .filter(w => srcFilter === 'all' || (srcFilter === 'uploads' ? w.source === 'uploads' : w.source !== 'uploads'))
     // "图片"档的值是 scene（WE 场景纹理），但它必须同时收录上传的图片
     // （type=image）——否则上传的图永远藏在"图片"筛选外面（定位也找不到它）
     .filter(w => typeFilter === 'all' || w.type === typeFilter
@@ -812,6 +823,17 @@ function WallpaperPicker({ mode }) {
     return () => obs.disconnect()
   }, [hasMore, page, items.length])
 
+  // 删除上传壁纸后的收口：刷新清单；删的若正是当前壁纸，清空选择
+  // （文件已不存在，留在设置里只会让看门狗反复重建失败）
+  const afterDelete = w => {
+    if (s.wallpaperId === w.id) {
+      const n = { ...s, wallpaperId: '', wallpaperTitle: '', mediaPath: '', previewPath: '', type: '' }
+      setSettings(n)
+    }
+    reloadInventory()
+    host.notify({ kind: 'info', message: t('delDone') + ': ' + w.title })
+  }
+
   const P = paletteFor(mode, s.panelOpacity)
   const St = buildStyles(P)
 
@@ -839,6 +861,15 @@ function WallpaperPicker({ mode }) {
           { value: 'all', label: t('typeAll') },
           { value: 'video', label: t('typeVideo') },
           { value: 'scene', label: t('typeScene') },
+        ],
+      }),
+      jsx(Dropdown, {
+        P, value: srcFilter, title: t('srcAll'),
+        onChange: v => setSettings({ ...s, srcFilter: v }),
+        options: [
+          { value: 'all', label: t('srcAll') },
+          { value: 'uploads', label: t('srcUploads') },
+          { value: 'library', label: t('srcWE') },
         ],
       }),
       jsx(Dropdown, {
@@ -914,7 +945,7 @@ function WallpaperPicker({ mode }) {
       'data-slot': 'wallpaper-gridwrap',
       children: jsxs('div', { children: [
         jsx('div', { style: St.grid,
-          children: items.map(w => jsx(WallpaperCard, { w, pv, s, St, loadPreviews })) }),
+          children: items.map(w => jsx(WallpaperCard, { w, pv, s, St, loadPreviews, onDeleted: afterDelete })) }),
         hasMore ? jsx('div', { ref: sentinelRef, style: { height: '8px' } }) : null,
       ] }),
     }),
@@ -998,6 +1029,7 @@ let bubbleStyleEl = null
 function frostCss(compA, tlA) {
   const c = Math.min(Math.max(compA ?? 45, 0), 100)
   const tl = Math.min(Math.max(tlA ?? 55, 0), 100)
+  const tlTrack = Math.max(tl - 25, 8)  // 开关轨道保持比面板厚一点，滑到0时圆点才有落点
   return `
     /* 用户消息的 sticky 整行：核心在它背后画了一条不透明遮带（滚动时遮挡穿行文字）。
            用户要求彻底去掉——完全透明、不填不糊；滚动时的文字重叠是接受的代价。
@@ -1055,6 +1087,28 @@ function frostCss(compA, tlA) {
     :root[data-hermes-glass] div[data-glass-raised] {
       backdrop-filter: blur(16px) saturate(1.15);
       -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    }
+    /* 浮层卡内部还藏着一圈"近实心小表面"（用户 2026-09-12 点名：设置页左侧
+       导航栏、顶部搜索胶囊、开关等）：
+       - --ui-sidebar-surface-background：核心在 raised 里强制 max(94%)——左导航
+         栏的白底就是它；覆写成滑条驱动。
+       - --ui-bg-tertiary：分段控件轨道 + 导航选中芯片的灰底，降 62% 让它透。
+       - [data-glass-opaque] 规则声明"覆盖自身兄弟节点的表面必须实心"（搜索胶囊
+         自带此标记），在 raised 后代范围内把它拉回滑条值——作用域锁死在浮层卡
+         内部，聊天区拖拽行等其它 opaque 用户不受牵连。
+       - switch 轨道：核心的 dt-background 混合无 data 标记，按 slot 单独薄化。 */
+    :root[data-hermes-glass] [data-glass-raised] {
+      --ui-sidebar-surface-background: color-mix(in srgb, var(--ui-bg-sidebar) ${tl}%, transparent) !important;
+      --ui-bg-tertiary: color-mix(in srgb, var(--ui-bg-tertiary) 62%, transparent) !important;
+    }
+    :root[data-hermes-glass] [data-glass-raised] [data-glass-opaque] {
+      --ui-chat-surface-background: color-mix(in srgb, var(--ui-bg-chrome) ${tl}%, transparent) !important;
+      --ui-bg-chrome: color-mix(in srgb, var(--ui-bg-chrome) ${tl}%, transparent);
+      backdrop-filter: blur(12px) saturate(1.1);
+      -webkit-backdrop-filter: blur(12px) saturate(1.1);
+    }
+    :root[data-hermes-glass] [data-glass-raised] [data-slot='switch'] {
+      background-color: color-mix(in srgb, var(--dt-background) ${tlTrack}%, transparent) !important;
     }
     :root[data-hermes-glass] [data-slot='code-card'] {
       background: color-mix(in srgb, var(--ui-bg-editor) 50%, transparent) !important;
@@ -1209,9 +1263,26 @@ function hudShow(P, title, sub) {
   return api
 }
 
-function WallpaperCard({ w, pv, s, St, loadPreviews: load }) {
+function WallpaperCard({ w, pv, s, St, loadPreviews: load, onDeleted }) {
   const selected = w.id === s.wallpaperId
   const thumb = pv[w.id]
+  // 两段式删除（不用 window.confirm：Electron 渲染进程里它卡交互、反馈也丑）：
+  // 第一次点 ✕ 变红并提示"再点一次确认"，2.5 秒内再点才真删；过点自动回退。
+  const [armed, setArmed] = useState(0)
+  useEffect(() => {
+    if (!armed) return
+    const to = setTimeout(() => setArmed(0), 2500)
+    return () => clearTimeout(to)
+  }, [armed])
+  const doDelete = e => {
+    e.stopPropagation()
+    if (!armed) { setArmed(Date.now()); return }
+    // 只传 id：路径解析与"必须在 uploads 目录内"的校验全在后端做（清单
+    // 投影本就剥掉路径字段，前端压根不该知道文件在哪）
+    _ctx.rest('/upload/delete', { method: 'POST', body: { id: w.id } })
+      .then(() => onDeleted && onDeleted(w))
+      .catch(err => host.notify({ kind: 'error', message: t('delFail') + String(err) }))
+  }
   return jsx('button', {
     type: 'button',
     'data-wid': w.id,
@@ -1238,7 +1309,16 @@ function WallpaperCard({ w, pv, s, St, loadPreviews: load }) {
         ? jsx('img', { src: thumb, style: St.thumbImg, alt: w.title })
         : jsx('div', { style: { ...St.thumbBox, marginBottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: P_text(St) }, children: w.title.slice(0, 24) }) }),
       jsx('div', { style: St.title, children: w.title }),
-      jsx('div', { style: St.meta, children: `${w.type === 'video' ? t('typeVideo') : w.type === 'scene' ? t('typeScene') : w.type} · ${w.contentrating}` }),
+      jsxs('div', { style: St.meta, children: [
+        `${w.type === 'video' ? t('typeVideo') : w.type === 'scene' ? t('typeScene') : w.type} · ${w.contentrating}`,
+        w.source === 'uploads' ? jsx('span', {
+          style: { float: 'right', cursor: 'pointer', fontWeight: 700, marginLeft: '6px',
+                   color: armed ? '#ff5b4e' : 'rgba(127,127,127,0.6)' },
+          title: armed ? t('delConfirm') : t('delTip'),
+          onClick: doDelete,
+          children: armed ? t('delConfirm') : '✕',
+        }) : null,
+      ] }),
     ] }),
   })
 }

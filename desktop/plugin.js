@@ -636,7 +636,7 @@ function buildStyles(P) {
 
 // 自绘下拉框（替代原生 <select>）：圆角、开合动效、配色随面板不透明度联动，
 // 选项文字完全可国际化。
-function Dropdown({ P, value, options, onChange, title, maxWidth }) {
+function Dropdown({ P, value, options, onChange, title, maxWidth, minWidth }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
   const menuRef = useRef(null)
@@ -664,14 +664,16 @@ function Dropdown({ P, value, options, onChange, title, maxWidth }) {
     jsxs('button', {
       type: 'button', title, className: 'wpe-dd-btn',
       style: {
-        display: 'inline-flex', alignItems: 'center', maxWidth: maxWidth || '170px',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between',
+        minWidth: minWidth || '92px', maxWidth: maxWidth || '170px',
         padding: '5px 10px 5px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 500,
         cursor: 'pointer', background: P.panelSoft, color: P.text, border: `1px solid ${P.border}`,
         transition: 'background 140ms ease, border-color 140ms ease',
       },
       onClick: () => setOpen(o => !o),
       children: [
-        jsx('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, children: cur ? cur.label : '—' }),
+        // 标签占位也钉住同一宽度：文字 1/2/3/4 字切换时按钮宽度全程恒定
+        jsx('span', { style: { minWidth: '6ch', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, children: cur ? cur.label : '—' }),
         jsx('span', {
           style: { fontSize: '9px', marginLeft: '7px', flexShrink: 0, display: 'inline-block', transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 160ms ease' },
           children: '▾',

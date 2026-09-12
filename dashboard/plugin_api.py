@@ -1,12 +1,11 @@
-"""Wallpaper Engine 壁纸插件后端 — 单文件 FastAPI 路由。
+"""Wallpaper Engine plugin backend — single-file FastAPI router.
 
-Hermes 的 web 服务通过 spec_from_file_location 导入本文件——没有包上下文、
-也不会把本文件所在目录加进 sys.path，因此扫描器 / 缩略图 / HTTP 路由全部
-收在这一个文件里（唯一例外：批量缩略图在同目录 _thumb_batch.py，运行时
-按路径动态加载——文件名不可改，路由里按名引用）。
+The Hermes web server imports this file via spec_from_file_location with NO
+package context and NO sys.path entry for its directory, so everything lives
+in this one file: wallpaper scanner + thumbnailer + HTTP routes.
 
-对外契约：模块暴露 `router`（FastAPI APIRouter），由宿主挂载到
-/api/plugins/hermes-wallpaper-engine/ 之下。
+Contract: module exposes `router` (FastAPI APIRouter), mounted by the host
+under /api/plugins/hermes-wallpaper-engine/.
 """
 from __future__ import annotations
 
@@ -23,7 +22,7 @@ from typing import Any, Optional
 import fastapi
 from fastapi import APIRouter, File, HTTPException, Query, Request
 
-# ================================================================ 常量
+# ================================================================ constants
 
 WALLPAPER_ENGINE_DIRNAME = "wallpaper_engine"
 STEAM_CONTENT_APP_ID = "431960"
@@ -32,15 +31,43 @@ VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv", ".mov", ".avi"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 THUMB_MAX_BYTES = 96 * 1024
 THUMB_CAP_PER_REQUEST = 60
+# 上传壁纸统一落盘在插件后端自己的 uploads 目录（可被 HERMES_WALLPAPER_UPLOADS 覆写）。
+# 历史坑：此处曾指向 ~/.hermes-wallpaper/uploads，而旧版上传路由写的是插件目录下
+# dashboard/uploads——两个"上传目录"分叉，上传成功的文件永远扫不到（2026-09 归一）。
 UPLOAD_DIR = Path(os.environ.get("HERMES_WALLPAPER_UPLOADS",
-                                 str(Path.home() / ".hermes-wallpaper" / "uploads")))
+                                 str(Path(__file__).resolve().parent / "uploads")))
+_LEGACY_UPLOAD_DIR = Path.home() / ".hermes-wallpaper" / "uploads"  # 旧版落点，见下方一次性迁移
+def _migrate_legacy_uploads() -> None:
+    """一次性迁移：旧版（目录分叉 bug 时代）的上传文件从 ~/.hermes-wallpaper/uploads
+    挪进归一后的 UPLOAD_DIR。同名不覆盖（加 -legacy 后缀）；旧目录清空后删除。"""
+    try:
+        if not _LEGACY_UPLOAD_DIR.is_dir():
+            return
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        for child in _LEGACY_UPLOAD_DIR.iterdir():
+            if not child.is_file():
+                continue
+            dest = UPLOAD_DIR / child.name
+            if dest.exists():
+                stem, ext = os.path.splitext(child.name)
+                dest = UPLOAD_DIR / f"{stem}-legacy{ext}"
+            child.rename(dest)
+        if not any(_LEGACY_UPLOAD_DIR.iterdir()):
+            _LEGACY_UPLOAD_DIR.rmdir()
+    except OSError:
+        pass  # 迁移失败不阻塞启动（最坏情况：旧文件继续躺在旧目录里）
+
+
+_migrate_legacy_uploads()
+
 MEDIA_EXTS = {".mp4", ".webm", ".mkv", ".mov"}
 
 router = APIRouter()
 
-# ================================================================ 缓存
-# （2026-09-10 新增：选页网格、悬停预热、resolve 全要过 scan_wallpapers，
-# 冷扫 ~280 个工坊目录要好几秒，换壁纸慢得像结冰。20 秒 TTL 兼顾上传新鲜度。）
+# ================================================================ caches
+# (added 2026-09-10: the picker's card grid + hover prefetch + resolve all
+# hit scan_wallpapers; a cold walk over ~280 workshop dirs takes seconds and
+# made wallpaper switching feel glacial. 20s TTL keeps it fresh for uploads.)
 
 _SCAN_CACHE: dict[str, Any] | None = None
 _SCAN_CACHE_AT: float = 0.0
@@ -48,7 +75,7 @@ _SCAN_CACHE_TTL = 20.0
 _MEDIA_CACHE: dict[str, dict[str, Any]] = {}
 _MEDIA_CACHE_MAX = 24
 
-# ================================================================ 壁纸扫描器
+# ================================================================ scanner
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -151,8 +178,9 @@ def _classify(project_dir: Path, project: dict[str, Any]) -> dict[str, Any] | No
             entry["previewPath"] = str(cand)
             break
 
-    # 场景壁纸的真实画面在 scene.pkg（PKGV 包）里，preview 常常是"封面"。
-    # 主纹理在 /resolve 时按需提取——绝不在扫描期做（200+ 个包会拖死清单）。
+    # Scene wallpapers: the real artwork lives inside scene.pkg (PKGV). The
+    # preview often reads as a "cover" — extract the main texture ON DEMAND
+    # (see /resolve), never during scan (200+ pkgs would slow the inventory).
     pkg = project_dir / "scene.pkg"
     if pkg.is_file():
         entry["pkgPath"] = str(pkg)
@@ -178,7 +206,7 @@ def scan_wallpapers() -> dict[str, Any]:
         myprojects = install / "projects" / "myprojects"
         if myprojects.is_dir():
             scan_dirs.append((myprojects, "myprojects"))
-    # 自定义上传：uploads 目录里的每个媒体文件即一张独立壁纸。
+    # Custom uploads: each media file in the uploads dir is a wallpaper.
     try:
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         scan_dirs.append((UPLOAD_DIR, "uploads"))
@@ -226,16 +254,16 @@ def scan_wallpapers() -> dict[str, Any]:
     return result
 
 
-# ================================================================ 场景主纹理提取
+# ================================================================ scene textures
 
 TEXTURE_CACHE_DIR = Path(__file__).resolve().parent / "texture_cache"
-PKG_TEXTURE_MIN_BYTES = 40_000  # 小于 40KB 的内嵌图是图标/UI 碎片，忽略
+PKG_TEXTURE_MIN_BYTES = 40_000  # ignore small embedded icons/UI bits
 
 
 def _extract_biggest_image(raw: bytes) -> tuple[bytes, str] | None:
-    """从 PKGV 二进制里挑出最大的内嵌 JPEG/PNG。尺寸接近时优先 JPEG
-    （壁纸作者的摄影图层都是 JPEG，大 PNG 常是带透明的 UI 图层），
-    但明显更大的 PNG 就是真实画面。"""
+    """Largest embedded JPEG/PNG in a PKGV blob. JPEG wins near-ties (WE
+    authors photographic layers as JPEG; PNGs are usually UI/alpha sheets),
+    but a clearly larger PNG is the real artwork."""
     best: dict[str, tuple[int, int, int]] = {}  # kind -> (size, start, end)
     png_sig = b"\x89PNG\x0d\x0a\x1a\x0a"
     for m in re.finditer(png_sig, raw):
@@ -267,8 +295,8 @@ def _extract_biggest_image(raw: bytes) -> tuple[bytes, str] | None:
 
 
 def _scene_texture(entry: dict[str, Any]) -> str | None:
-    """提取场景壁纸的主纹理，磁盘缓存（按包 mtime 键控）只解一次。
-    返回缓存文件路径；包里无可提取图像时返回 None。"""
+    """Extract (once, disk-cached) the main texture of a scene wallpaper.
+    Returns the cached file path, or None when the pkg holds no image."""
     pkg_path = entry.get("pkgPath")
     if not pkg_path:
         return None
@@ -293,8 +321,8 @@ def _scene_texture(entry: dict[str, Any]) -> str | None:
     out = cached.with_suffix(".jpg" if kind == "jpg" else ".png")
     try:
         out.write_bytes(blob)
-        # 上限必须明显高于场景总数（本机约 202）——低于它就会抖动：
-        # 每次重建都要把被挤掉的包重新解一遍。
+        # Cap the cache well ABOVE the scene count (~202 on this machine) —
+        # a cap below it thrashes: every rebuild re-extracts evicted pkgs.
         files = sorted(TEXTURE_CACHE_DIR.iterdir(), key=lambda f: f.stat().st_mtime)
         for stale in files[:-240]:
             stale.unlink(missing_ok=True)
@@ -303,16 +331,16 @@ def _scene_texture(entry: dict[str, Any]) -> str | None:
     return str(out)
 
 
-# ================================================================ 缩略图
+# ================================================================ thumbnails
 
 
 def make_thumb(path: Path, width: int = 320) -> bytes | None:
-    """单张 JPEG 缩略图：借 PowerShell System.Drawing 实现（零第三方依赖）。"""
+    """Small JPEG thumbnail via PowerShell System.Drawing (stdlib only)."""
     try:
         from base64 import b64encode
 
-        # 路径必须 base64 编码传递：GBK 控制台代码页会把内联非 ASCII
-        # 路径毁成"路径中具有非法字符"。
+        # Pass the path base64-encoded: the GBK console codepage mangles
+        # non-ASCII inline paths ("路径中具有非法字符").
         path_b64 = b64encode(str(path).encode("utf-8")).decode("ascii")
         ps = (
             "Add-Type -AssemblyName System.Drawing;"
@@ -360,53 +388,14 @@ def preview_data_uri(path_str: str) -> str | None:
 
 
 
-# ================================================================ 用户上传
+# ================================================================ uploads
 
-UPLOAD_MAX_BYTES = 200 * 1024 * 1024
-UPLOAD_VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".mov"}
-UPLOAD_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-
-
-def _uploads_dir() -> Path:
-    d = Path(__file__).resolve().parent / "uploads"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _upload_entry(p: Path) -> dict[str, Any]:
-    ext = p.suffix.lower()
-    is_video = ext in UPLOAD_VIDEO_EXTS
-    entry: dict[str, Any] = {
-        "id": "up_" + re.sub(r"[^A-Za-z0-9_-]", "_", p.stem) + "_" + str(abs(hash(p.name)) % 100000),
-        "title": p.stem,
-        "type": "video" if is_video else "scene",
-        "contentrating": "Unrated",
-        "dir": str(p.parent),
-        "source": "upload",
-    }
-    if is_video:
-        entry["mediaPath"] = str(p)
-        entry["mediaExt"] = ext
-    else:
-        entry["previewPath"] = str(p)
-    return entry
-
-
-def _list_uploads() -> list[dict[str, Any]]:
-    out = []
-    d = _uploads_dir()
-    for child in sorted(d.iterdir()):
-        if child.is_file() and child.suffix.lower() in (UPLOAD_VIDEO_EXTS | UPLOAD_IMAGE_EXTS):
-            out.append(_upload_entry(child))
-    return out
-
-
-# ================================================================ HTTP 路由
+# ================================================================ routes
 
 
 def _path_is_safe(candidate: str) -> bool:
-    """路径安全校验：不许穿越、不许控制字符/Windows 非法字符；
-    冒号只允许 1 个且必须在盘符位（索引 1）。"""
+    """No traversal, no control/Windows-illegal chars; the drive colon is the
+    ONLY colon allowed (at index 1)."""
     if ".." in candidate or "\x00" in candidate:
         return False
     if candidate.count(":") > 1:
@@ -423,7 +412,7 @@ def inventory(
     limit: int = Query(default=0),
 ) -> dict:
     inv = scan_wallpapers()
-    items = inv["wallpapers"] + _list_uploads()
+    items = inv["wallpapers"]  # uploads 已由扫描器纳入（scan_dirs 含 UPLOAD_DIR），不再双路拼接
     if type:
         items = [w for w in items if w["type"] == type]
     if rating and rating != "all":
@@ -446,7 +435,7 @@ UPLOAD_MAX_BYTES = 1024 * 1024 * 1024  # 1 GiB
 
 @router.post("/upload")
 async def upload(file: fastapi.UploadFile = File(...)) -> dict:
-    """把用户上传的壁纸（jpg/png/webp/gif/mp4/webm）存进 uploads 目录。"""
+    """Store a custom wallpaper (jpg/png/webp/gif/mp4/webm) in the uploads dir."""
     if file is None:
         raise HTTPException(status_code=400, detail="multipart file field required")
     data = await file.read()
@@ -458,23 +447,32 @@ async def upload(file: fastapi.UploadFile = File(...)) -> dict:
     ext = os.path.splitext(name)[1].lower()
     if ext not in VIDEO_EXTENSIONS and ext not in IMAGE_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Unsupported type {ext}")
+    # 同名不覆盖：追加 -1/-2…（用户会反复上传同名文件）
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     dest = UPLOAD_DIR / name
+    stem, ext = os.path.splitext(name)
+    n = 1
+    while dest.exists():
+        dest = UPLOAD_DIR / f"{stem}-{n}{ext}"
+        n += 1
     dest.write_bytes(data)
     global _SCAN_CACHE
-    _SCAN_CACHE = None  # 让下一次清单请求立刻看到新上传
-    return {"ok": True, "name": name, "size": len(data)}
+    _SCAN_CACHE = None  # next inventory sees the new upload immediately
+    # path 给 UI 展示与"打开所在文件夹"用（用户问：上传的图保存在哪里）
+    return {"ok": True, "name": dest.name, "size": len(data), "path": str(dest)}
 
 
 @router.post("/upload/delete")
 def upload_delete(payload: dict | None = None) -> dict:
-    """删除已上传的壁纸文件（只允许删 uploads 目录，工坊目录绝不允许）。"""
+    """Delete a previously uploaded wallpaper file (uploads only, never WE dirs)."""
     payload = payload or {}
     name = os.path.basename(str(payload.get("name") or ""))
     dest = UPLOAD_DIR / name
     if not dest.resolve().is_relative_to(UPLOAD_DIR.resolve()) or not dest.is_file():
         raise HTTPException(status_code=404, detail="upload not found")
     dest.unlink()
+    global _SCAN_CACHE
+    _SCAN_CACHE = None  # 删除后立刻重扫：否则网格会挂着死卡片最长 20 秒，点开必报错
     return {"ok": True}
 
 
@@ -512,12 +510,12 @@ def previews(ids: str = Query(default="")) -> dict:
 
 
 def _downscale_bytes(raw: bytes, mime: str, max_dim: int = 2560) -> tuple[bytes, str] | None:
-    """大图降采样（PowerShell System.Drawing，零第三方依赖）。
+    """Downscale oversized images via PowerShell System.Drawing (stdlib only).
 
-    几 MB 的壁纸 base64 后会变成几 MB 的 JSON 穿过插件 REST 通道——
-    这是"换壁纸慢"报告里很实在的一大块。字节必须走临时文件传输：
-    内联 base64 一超命令行 32767 字符上限（约对应 24KB 数据）PowerShell
-    就会静默失败。返回 (bytes, mime)，任何失败返回 None 由调用方回退。"""
+    Multi-megabyte wallpapers base64 into multi-MB JSON over the plugin REST
+    channel — a visible chunk of the "switching takes forever" report. Bytes
+    travel via TEMP FILES: inline base64 blows the 32k command-line cap on
+    anything above ~24KB. Returns (bytes, mime) or None on any failure."""
     import tempfile
     src_ext = ".png" if "png" in mime else ".jpg"
     tmp_in = tmp_out = None
@@ -571,17 +569,18 @@ def _downscale_bytes(raw: bytes, mime: str, max_dim: int = 2560) -> tuple[bytes,
 
 @router.get("/media")
 def media(path: str = Query(default="")) -> dict:
-    """图片壁纸的 base64 dataURI 通道。只接受扫描器产出的路径——
-    裸 <img> 带不了会话鉴权头，所以 UI 经 ctx.rest（自带鉴权）来取
-    dataURI 再直接赋值。
+    """Base64 data-URI for an image wallpaper. Scanner-derived paths only —
+    the <img> tag can't carry the session token header, so the UI fetches this
+    via ctx.rest (which authenticates) and assigns the data URI directly.
 
-    结果进内存缓存（LRU 上限）；超大原图一次性降采样到 ≤2560px，
-    悬停预热 + 重复选中全部命中缓存，不再反复读几 MB 的文件。"""
+    Results are cached in memory (LRU-ish cap) and oversized originals are
+    downscaled once to <=2560px, so hover prefetch + repeated selection hit
+    the cache instead of re-reading multi-MB files."""
     inv = scan_wallpapers()
     target = next((w for w in inv["wallpapers"] if w.get("previewPath") == path or w.get("mediaPath") == path), None)
     p = Path(path)
-    # 我们自己产出的路径（场景纹理缓存）也允许作为媒体源——
-    # 用"目录包含"校验代替精确清单匹配。
+    # Paths produced by us (scene texture cache) are allowed as media sources —
+    # verify by containment rather than exact scanner-listing.
     if target is None and not _path_is_safe(path):
         raise HTTPException(status_code=404, detail="wallpaper not found")
     if target is None:
@@ -602,7 +601,7 @@ def media(path: str = Query(default="")) -> dict:
     mime = "image/png" if p.suffix.lower() == ".png" else ("image/gif" if p.suffix.lower() == ".gif" else "image/jpeg")
     payload, out_mime = raw, mime
     if len(raw) > 1_500_000 and mime != "image/gif":
-        # 只处理真正的大图；GIF 转 JPEG 会毁掉动画，跳过。
+        # Only bother downsizing the heavy ones; GIFs re-encode badly as JPEG.
         ds = _downscale_bytes(raw, mime)
         if ds is not None:
             payload, out_mime = ds
@@ -620,10 +619,10 @@ def resolve(payload: dict | None = None) -> dict:
     wid = str(payload.get("id") or "")
     raw = str(payload.get("path") or "")
     inv = scan_wallpapers()
-    all_w = inv["wallpapers"] + _list_uploads()
+    all_w = inv["wallpapers"]
     target = next((w for w in all_w if w["id"] == wid), None)
 
-    # 只认扫描器产出的记录——绝不开放任意文件系统访问。
+    # Only scanner-derived records are honored — no arbitrary filesystem access.
     candidate = (target or {}).get("mediaPath") or (target or {}).get("previewPath") or ""
     if not target and raw:
         candidate = raw
@@ -637,9 +636,10 @@ def resolve(payload: dict | None = None) -> dict:
     if ext not in MEDIA_EXTS and ext not in IMAGE_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"unsupported media type {ext}")
 
-    # 场景壁纸优先返回从 scene.pkg 提取的主纹理——preview.jpg 常常是
-    # 封面/宣传帧（用户报"显示的还是封面"）。提取不到才回落 preview
-    # （纯粒子/3D 场景包里没有摄影图层，属正常）。
+    # Scene wallpaper: prefer the main texture extracted from scene.pkg —
+    # the preview.jpg often reads as a cover/promo frame (user report:
+    # "显示的还是封面"). Falls back to the preview when extraction yields
+    # nothing (pure particle/3D scenes have no photographic texture).
     if target and target.get("type") == "scene" and target.get("pkgPath"):
         tex = _scene_texture(target)
         if tex:
@@ -652,42 +652,3 @@ def resolve(payload: dict | None = None) -> dict:
         "type": target["type"] if target else "unknown",
         "title": target["title"] if target else p.stem,
     }
-
-
-@router.post("/upload")
-async def upload(request: Request, name: str = Query(default="")) -> dict:
-    """上传自定义壁纸（视频或图片），请求体 = 文件原始字节。"""
-    safe_name = Path(name).name  # basename only
-    if not safe_name or safe_name != name:
-        raise HTTPException(status_code=400, detail="invalid file name")
-    ext = Path(safe_name).suffix.lower()
-    if ext not in (UPLOAD_VIDEO_EXTS | UPLOAD_IMAGE_EXTS):
-        raise HTTPException(status_code=415, detail=f"unsupported type {ext}")
-    body = await request.body()
-    if not body:
-        raise HTTPException(status_code=400, detail="empty body")
-    if len(body) > UPLOAD_MAX_BYTES:
-        raise HTTPException(status_code=413, detail="file exceeds 200MB limit")
-    d = _uploads_dir()
-    dest = d / safe_name
-    n = 1
-    while dest.exists():
-        dest = d / f"{Path(safe_name).stem}-{n}{ext}"
-        n += 1
-    dest.write_bytes(body)
-    global _SCAN_CACHE
-    _SCAN_CACHE = None  # 让下一次清单请求立刻看到新上传
-    return {"ok": True, "name": dest.name, "size": len(body)}
-
-
-@router.delete("/upload")
-def upload_delete(name: str = Query(default="")) -> dict:
-    safe_name = Path(name).name
-    d = _uploads_dir().resolve()
-    target = (d / safe_name).resolve()
-    if d not in target.parents:
-        raise HTTPException(status_code=400, detail="invalid path")
-    if target.is_file():
-        target.unlink()
-        return {"ok": True}
-    raise HTTPException(status_code=404, detail="not found")

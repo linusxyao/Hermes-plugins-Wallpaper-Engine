@@ -1,4 +1,31 @@
-# Hermes 壁纸引擎插件（hermes-wallpaper-engine）
+# Hermes Wallpaper Engine Plugin（hermes-wallpaper-engine）
+
+> **Platform: Windows only** · License: MIT · Hermes ≥ desktop plugin SDK (2026-09 builds)
+>
+> Render your local **Wallpaper Engine** wallpapers (video + scene main-textures
+> + still images) behind the Hermes desktop chat, with an in-app picker page,
+> six live-adjustable sliders, and a frosted-glass chat styling suite. Inspired
+> by [dsh-plugin-wallpaper-engine](https://github.com/elysia395/dsh-wallpaper-engine)
+> (MIT), rebuilt natively on the Hermes desktop plugin SDK. **Zero core-source
+> modification** — every file lives under the user data directory (`~/.hermes`);
+> disabling or deleting the plugin restores the app to its original look.
+>
+> Install: copy `dashboard/` → `~/.hermes/plugins/hermes-wallpaper-engine/` and
+> `desktop/plugin.js` → `~/.hermes/desktop-plugins/hermes-wallpaper-engine/`, then
+> restart Hermes. Requires Wallpaper Engine + Steam workshop content (auto-discovered
+> via `libraryfolders.vdf`), or use the built-in upload button for custom media.
+> Thumbnails/downscaling use Windows built-in PowerShell + System.Drawing — no
+> third-party dependencies, and the reason the plugin is Windows-only.
+>
+> Capabilities (as declared to the catalog): sidebar route + command-palette entry,
+> plugin-scoped REST routes (`/wallpapers`, `/resolve`, `/media`, `/thumbnails`,
+> `/upload`, `/upload/delete`), one injected DOM backdrop layer, injected chat-frost
+> stylesheets. No tools, no hooks into the agent loop, no env vars, no network
+> egress beyond the local Hermes gateway.
+>
+> 以下为完整中文文档。
+
+---
 
 把本机 **Wallpaper Engine** 的壁纸（视频 + 场景主纹理 + 静态图）铺到 Hermes 桌面端
 聊天界面后方，附带应用内选页、六类可调滑条、聊天区磨砂美化套件。
@@ -6,6 +33,9 @@
 灵感来自 [dsh-plugin-wallpaper-engine](https://github.com/elysia395/dsh-wallpaper-engine)
 （MIT），为 Hermes 桌面插件 SDK 全新实现。**零侵入 Hermes 源码**：所有文件都在用户数据
 目录内，禁用/删除即完全还原。
+
+> ⚠ **适用平台：仅 Windows**。缩略图与大图降采样依赖 Windows 自带的
+> PowerShell + System.Drawing，无第三方依赖，但也因此不可移植到 macOS/Linux。
 
 ## 目录结构
 

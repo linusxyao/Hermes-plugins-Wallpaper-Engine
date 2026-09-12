@@ -1,0 +1,23 @@
+# Hermes Plugin Catalog 条目草稿（本文件是提交素材，不随插件运行）
+#
+# 用法：插件在本仓库的发布 commit 满 2 周后（官方供应链成熟期政策），
+# 把本文件（填好 sha、去掉注释）作为 PR 提交到：
+#   NousResearch/hermes-agent → plugin-catalog/hermes-wallpaper-engine.yaml
+# 提交者必须是本仓库 owner/主要贡献者（满足）。无自助注册通道，人工审核合并。
+#
+# sha 获取：git rev-parse HEAD 的完整 40 位（指向代码稳定 commit；
+# 之后的文档级 commit 不影响该 pin，安装器克隆的就是钉死的那个 commit）。
+
+name: hermes-wallpaper-engine
+repo: https://github.com/linusxyao/Hermes-plugins-Wallpaper-Engine
+sha: <FILL-40-HEX-AT-SUBMIT-TIME>
+description: Render local Wallpaper Engine wallpapers (video + scene textures + images) behind the Hermes desktop chat, with an in-app picker and frosted-glass styling suite. Windows only.
+maintainer: linusxyao
+tier: community
+docs_url: https://github.com/linusxyao/Hermes-plugins-Wallpaper-Engine
+platforms: [windows]
+capabilities:
+  provides_tools: []
+  provides_hooks: []
+  provides_middleware: []
+  requires_env: []

@@ -1244,6 +1244,15 @@ function frostCss(compA, tlA) {
     :root[data-hermes-glass] [data-slot='composer-root'] {
       --composer-fill: color-mix(in srgb, var(--dt-card) ${c}%, transparent) !important;
     }
+    /* 输入框上方停靠的排队/状态栈卡片：核心只在 composer-root 子树内声明
+       --composer-fill，而这块栈是输入框的【兄弟】——它回落到 :root 兜底值
+       （90% 卡片色，近实心），所以输入框滑条一直管不到它（用户 2026-09-12 报
+       "排队面板不透"）。这里按输入框同值再声明：核心本就把两者设计成"共享
+       一个填充、融合成一枚胶囊"（上下两张卡同值才不裂），故跟输入框滑条走，
+       而非悬浮窗滑条。 */
+    :root[data-hermes-glass] [data-slot='composer-status-stack'] {
+      --composer-fill: color-mix(in srgb, var(--dt-card) ${c}%, transparent) !important;
+    }
   `
 }
 

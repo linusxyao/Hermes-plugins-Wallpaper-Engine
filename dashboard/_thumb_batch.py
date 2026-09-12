@@ -3,7 +3,7 @@
 由 plugin_api.py 经 importlib 按文件路径动态加载（无包上下文），
 独立成文件是为了让 plugin_api 保持单一 FastAPI 路由面。文件名不可改。
 
-逐张起 PowerShell（每张 ~1.5 秒进程开销）曾经是选页首屏的大头：
+逐张起 PowerShell（每张 ~1.5 秒进程开销）曾是选页首屏的大头：
 8 张缩略图 = 8 次进程 = ~13 秒。批量化后 = 1 次进程 + N 次绘制。
 """
 from __future__ import annotations

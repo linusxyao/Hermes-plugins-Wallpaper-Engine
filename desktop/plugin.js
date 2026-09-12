@@ -1066,7 +1066,8 @@ function frostCss(compA, tlA) {
        渐隐带拉长（1→1.35rem，文字消得更早更柔和）、✕ 变圆底胶囊并
        距右缘留 3px 呼吸位。 */
     :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable] {
-      --pane-tab-close-width: 1.9rem;
+      /* !important 加固：自定义属性声明同样可加，防核心样式表晚加载/同源特异度竞争 */
+      --pane-tab-close-width: 1.9rem !important;
     }
     :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable]:hover > .pane-tab-content {
       -webkit-mask-image: linear-gradient(

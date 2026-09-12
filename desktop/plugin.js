@@ -438,7 +438,7 @@ const L = {
     current: t => '当前：' + t, clear: '清除',
     loading: '正在加载壁纸库…', empty: '没有可用的壁纸。请确认 Wallpaper Engine 已安装且工坊里有壁纸。',
     opacity: '壁纸不透明度', blur: '模糊', dim: '暗化', brightness: '亮度', panel: '面板不透明度', blurDim: '失焦暗化',
-    composerAlpha: '输入框不透明度', timelineAlpha: '时间线浮窗',
+    composerAlpha: '输入框不透明度', timelineAlpha: '弹出浮层',
     fitLabel: '对齐方式', fitCover: '覆盖', fitContain: '填充', fitCenter: '居中', fitFill: '拉伸', fitFree: '自由', fitTile: '平铺',
     posLabel: '位置', scaleLabel: '缩放',
     typeAll: '全部类型', typeVideo: '视频', typeScene: '图片',
@@ -457,7 +457,7 @@ const L = {
     current: t => 'Current: ' + t, clear: 'Clear',
     loading: 'Loading Wallpaper Engine library…', empty: 'No playable wallpapers found.',
     opacity: 'Opacity', blur: 'Blur', dim: 'Dim', brightness: 'Brightness', panel: 'Panel opacity', blurDim: 'Blur-dim',
-    composerAlpha: 'Composer opacity', timelineAlpha: 'Timeline popup',
+    composerAlpha: 'Composer opacity', timelineAlpha: 'Popups/dialogs',
     fitLabel: 'Alignment', fitCover: 'Cover', fitContain: 'Fill', fitCenter: 'Center', fitFill: 'Stretch', fitFree: 'Free', fitTile: 'Tile',
     posLabel: 'Position', scaleLabel: 'Scale',
     typeAll: 'All types', typeVideo: 'Video', typeScene: 'Image',
@@ -476,7 +476,7 @@ const L = {
     current: t => '現在：' + t, clear: 'クリア',
     loading: '壁紙ライブラリを読み込み中…', empty: '利用可能な壁紙がありません。Wallpaper Engine がインストール済みでワークショップに壁紙があるか確認してください。',
     opacity: '壁紙の不透明度', blur: 'ぼかし', dim: '暗さ', brightness: '明るさ', panel: 'パネルの不透明度', blurDim: '非アクティブ減光',
-    composerAlpha: '入力欄不透明度', timelineAlpha: 'タイムライン',
+    composerAlpha: '入力欄不透明度', timelineAlpha: 'ポップアップ',
     fitLabel: '配置', fitCover: 'カバー', fitContain: 'フィット', fitCenter: '中央', fitFill: '引き伸ばし', fitFree: 'フリー', fitTile: 'タイル',
     posLabel: '位置', scaleLabel: 'サイズ',
     typeAll: 'すべてのタイプ', typeVideo: '動画', typeScene: '画像',
@@ -495,7 +495,7 @@ const L = {
     current: t => '현재: ' + t, clear: '지우기',
     loading: '배경 라이브러리 불러오는 중…', empty: '사용 가능한 배경이 없습니다. Wallpaper Engine이 설치되어 있고 워크숍에 배경이 있는지 확인하세요.',
     opacity: '배경 불투명도', blur: '흐림', dim: '어둡게', brightness: '밝기', panel: '패널 불투명도', blurDim: '비활성 어둡게',
-    composerAlpha: '입력창 불투명도', timelineAlpha: '타임라인',
+    composerAlpha: '입력창 불투명도', timelineAlpha: '팝업/대화상자',
     fitLabel: '정렬', fitCover: '커버', fitContain: '맞춤', fitCenter: '가운데', fitFill: '늘리기', fitFree: '자유', fitTile: '타일',
     posLabel: '위치', scaleLabel: '크기',
     typeAll: '전체 유형', typeVideo: '동영상', typeScene: '이미지',
@@ -1025,12 +1025,26 @@ function frostCss(compA, tlA) {
       backdrop-filter: blur(14px) saturate(1.15) !important;
       -webkit-backdrop-filter: blur(14px) saturate(1.15) !important;
     }
-    /* 右侧滚动时间线的悬停浮窗（核心写死 96% 浮层色）。不透明度由滑条驱动，
-           核心自带的背景模糊保留。 */
-    /* 右侧滚动时间线的悬停浮窗（核心写死 96% 浮层色）。不透明度由滑条驱动，
-           核心自带的背景模糊保留。 */
-    :root[data-hermes-glass] [data-slot='thread-timeline-popover'] {
+    /* 弹出浮层家族（对话框/下拉菜单/选择菜单/滚动时间线悬停窗）：核心同一规则
+       画死 96% elevated 底。一根滑条统一驱动 alpha；核心自带 backdrop 模糊保留。
+       键名沿用 timelineAlpha（持久化兼容），语义已扩为"全部浮层"。 */
+    :root[data-hermes-glass] [data-slot='thread-timeline-popover'],
+    :root[data-hermes-glass] [data-slot='dialog-content'],
+    :root[data-hermes-glass] [data-slot='dropdown-menu-content'],
+    :root[data-hermes-glass] [data-slot='select-content'],
+    :root[data-hermes-glass] [data-slot='popover-content'] {
       background: color-mix(in srgb, var(--ui-bg-elevated) ${tl}%, transparent) !important;
+    }
+    /* 设置页这类大浮层卡片（OverlayView，核心标 data-glass-raised）：核心在
+       raised 上下文里把 --ui-chat-surface-background 强制 max(94%, keep)——
+       正是"设置框完全不透"的源头。这里以更高特异度覆写该变量为滑条驱动，
+       并补 backdrop 模糊（raised 卡片核心没给 blur，透明后不糊会显脏）。 */
+    :root[data-hermes-glass] [data-glass-raised] {
+      --ui-chat-surface-background: color-mix(in srgb, var(--ui-bg-chrome) ${tl}%, transparent) !important;
+    }
+    :root[data-hermes-glass] div[data-glass-raised] {
+      backdrop-filter: blur(16px) saturate(1.15);
+      -webkit-backdrop-filter: blur(16px) saturate(1.15);
     }
     :root[data-hermes-glass] [data-slot='code-card'] {
       background: color-mix(in srgb, var(--ui-bg-editor) 50%, transparent) !important;

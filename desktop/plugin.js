@@ -154,6 +154,34 @@ let backdropEl = null
 let backdropVideo = null
 const BACKDROP_SLOT = 'wallpaper-backdrop'
 
+// ---- 壁纸切换动画（参考本地设计库 awesome-design-md/starbucks 的
+// imageFadeTransition："opacity 0.3s ease-in on load, prevents jarring
+// pop-in"——在它基础上升级为电影感换法：新层 opacity+轻微推近(+图片附加
+// 焦点柔化 blur)淡入，旧层同步淡出，形成真·交叉溶解。WAAPI 不占用
+// style/transform，动画落回后 fit 模式的样式不受影响；CSS transition
+// 作为 WAAPI 不可用时的降级兜底。 ----
+const WPE_ENTER = { duration: 620, easing: 'cubic-bezier(.22,1,.36,1)' }
+const WPE_LEAVE = { duration: 430, easing: 'ease-in', fill: 'forwards' }
+function wpeEnter(el, withBlur) {
+  try {
+    const from = { opacity: 0, transform: 'scale(1.025)' }
+    const to = { opacity: 1, transform: 'scale(1)' }
+    if (withBlur) { from.filter = 'blur(7px)'; to.filter = 'blur(0)' }
+    el.animate([from, to], WPE_ENTER)
+  } catch { /* 降级：style.opacity=1 触发 260ms CSS transition 兜底 */ }
+}
+function wpeFadeOut(nodes) {
+  for (const x of nodes) {
+    if (!x.isConnected || x.dataset.fading) continue
+    x.dataset.fading = '1'
+    try {
+      const a = x.animate([{ opacity: Number(getComputedStyle(x).opacity) || 1 }, { opacity: 0 }], WPE_LEAVE)
+      a.onfinish = () => x.remove()
+      setTimeout(() => x.remove(), 900)  // onfinish 偶发不触发（窗口遮挡节流）的保险
+    } catch { x.remove() }
+  }
+}
+
 // 热重载安全：每次重载都生成全新模块实例，其 backdropEl 为 null。
 // 必须先认领页面已存在的壁纸层、清扫多余孤儿层——绝不允许两层壁纸叠加显示。
 function reclaimBackdropLayers() {
@@ -331,8 +359,9 @@ function applyBackdrop(s) {
       backdropEl.appendChild(v)
       const reveal = () => {
         v.style.opacity = '1'
-        backdropEl.querySelectorAll('video').forEach(x => { if (x !== v) x.remove() })
-        backdropEl.querySelectorAll('img').forEach(x => x.remove())
+        wpeEnter(v, false)  // 视频不加 blur：全屏解码已经吃 GPU，只留淡入+微推近
+        wpeFadeOut([...backdropEl.querySelectorAll('video')].filter(x => x !== v))
+        wpeFadeOut([...backdropEl.querySelectorAll('img')])
         backdropVideo = v
         setDim(_lastDimPct)  // re-stack the dim overlay ABOVE the new media
       }
@@ -396,8 +425,9 @@ function applyBackdrop(s) {
       backdropEl.appendChild(el)
       const reveal = () => {
         el.style.opacity = '1'
-        backdropEl.querySelectorAll('img').forEach(x => { if (x !== el) x.remove() })
-        backdropEl.querySelectorAll('video').forEach(x => x.remove())
+        wpeEnter(el, true)  // 图片走完整"焦点柔化"入场（blur 一次性，成本可忽略）
+        wpeFadeOut([...backdropEl.querySelectorAll('img')].filter(x => x !== el))
+        wpeFadeOut([...backdropEl.querySelectorAll('video')])
         backdropVideo = null
         setDim(_lastDimPct)  // re-stack the dim overlay ABOVE the new media
       }

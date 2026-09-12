@@ -1160,6 +1160,17 @@ function frostCss(compA, tlA) {
       background: color-mix(in srgb, currentColor 18%, transparent) !important;
       color: var(--ui-text-primary);
     }
+    /* 底部状态栏（网关/缓存命中率/GPU 等信息条）：核心用 --ui-sidebar-surface
+       上色、跟着面板滑条走——滑条拉低时 11px 小字直接糊进壁纸（用户 2026-09-12
+       点名看不清）。给它可读性地板：浓度 max(62%, 面板值) + 12px 磨砂底；
+       面板调高照常联动，只保证永不低于看清小字的浓度。文字同步从 tertiary
+       提到 secondary 的 85%，整条统一"半透但可读"。 */
+    :root[data-hermes-glass] [data-slot='statusbar'] {
+      background: color-mix(in srgb, var(--ui-bg-sidebar) max(62%, calc(var(--wpe-panel-a, 0.85) * 100%)), transparent) !important;
+      backdrop-filter: blur(12px) saturate(1.1);
+      -webkit-backdrop-filter: blur(12px) saturate(1.1);
+      --ui-text-tertiary: color-mix(in srgb, var(--ui-text-secondary) 85%, transparent);
+    }
     /* 通知 toast 堆栈（host.notify 弹出的卡片，用户 2026-09-12 收编）：核心
        STACK_SURFACE 用 bg-popover/95 类上色，该类全应用唯 notifications.tsx
        在用（grep 验证）——class 子串选择器精确锚定，不碰页面内 Alert 横幅。

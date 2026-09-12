@@ -438,7 +438,7 @@ const L = {
     current: t => '当前：' + t, clear: '清除',
     loading: '正在加载壁纸库…', empty: '没有可用的壁纸。请确认 Wallpaper Engine 已安装且工坊里有壁纸。',
     opacity: '壁纸不透明度', blur: '模糊', dim: '暗化', brightness: '亮度', panel: '面板不透明度', blurDim: '失焦暗化',
-    composerAlpha: '输入框不透明度', timelineAlpha: '弹出浮层',
+    composerAlpha: '输入框不透明度', timelineAlpha: '悬浮窗',
     fitLabel: '对齐方式', fitCover: '覆盖', fitContain: '填充', fitCenter: '居中', fitFill: '拉伸', fitFree: '自由', fitTile: '平铺',
     posLabel: '位置', scaleLabel: '缩放',
     typeAll: '全部类型', typeVideo: '视频', typeScene: '图片',
@@ -457,7 +457,7 @@ const L = {
     current: t => 'Current: ' + t, clear: 'Clear',
     loading: 'Loading Wallpaper Engine library…', empty: 'No playable wallpapers found.',
     opacity: 'Opacity', blur: 'Blur', dim: 'Dim', brightness: 'Brightness', panel: 'Panel opacity', blurDim: 'Blur-dim',
-    composerAlpha: 'Composer opacity', timelineAlpha: 'Popups/dialogs',
+    composerAlpha: 'Composer opacity', timelineAlpha: 'Floating windows',
     fitLabel: 'Alignment', fitCover: 'Cover', fitContain: 'Fill', fitCenter: 'Center', fitFill: 'Stretch', fitFree: 'Free', fitTile: 'Tile',
     posLabel: 'Position', scaleLabel: 'Scale',
     typeAll: 'All types', typeVideo: 'Video', typeScene: 'Image',
@@ -476,7 +476,7 @@ const L = {
     current: t => '現在：' + t, clear: 'クリア',
     loading: '壁紙ライブラリを読み込み中…', empty: '利用可能な壁紙がありません。Wallpaper Engine がインストール済みでワークショップに壁紙があるか確認してください。',
     opacity: '壁紙の不透明度', blur: 'ぼかし', dim: '暗さ', brightness: '明るさ', panel: 'パネルの不透明度', blurDim: '非アクティブ減光',
-    composerAlpha: '入力欄不透明度', timelineAlpha: 'ポップアップ',
+    composerAlpha: '入力欄不透明度', timelineAlpha: 'フローティングウィンドウ',
     fitLabel: '配置', fitCover: 'カバー', fitContain: 'フィット', fitCenter: '中央', fitFill: '引き伸ばし', fitFree: 'フリー', fitTile: 'タイル',
     posLabel: '位置', scaleLabel: 'サイズ',
     typeAll: 'すべてのタイプ', typeVideo: '動画', typeScene: '画像',
@@ -495,7 +495,7 @@ const L = {
     current: t => '현재: ' + t, clear: '지우기',
     loading: '배경 라이브러리 불러오는 중…', empty: '사용 가능한 배경이 없습니다. Wallpaper Engine이 설치되어 있고 워크숍에 배경이 있는지 확인하세요.',
     opacity: '배경 불투명도', blur: '흐림', dim: '어둡게', brightness: '밝기', panel: '패널 불투명도', blurDim: '비활성 어둡게',
-    composerAlpha: '입력창 불투명도', timelineAlpha: '팝업/대화상자',
+    composerAlpha: '입력창 불투명도', timelineAlpha: '플로팅 창',
     fitLabel: '정렬', fitCover: '커버', fitContain: '맞춤', fitCenter: '가운데', fitFill: '늘리기', fitFree: '자유', fitTile: '타일',
     posLabel: '위치', scaleLabel: '크기',
     typeAll: '전체 유형', typeVideo: '동영상', typeScene: '이미지',
@@ -1032,8 +1032,18 @@ function frostCss(compA, tlA) {
     :root[data-hermes-glass] [data-slot='dialog-content'],
     :root[data-hermes-glass] [data-slot='dropdown-menu-content'],
     :root[data-hermes-glass] [data-slot='select-content'],
-    :root[data-hermes-glass] [data-slot='popover-content'] {
+    :root[data-hermes-glass] [data-slot='context-menu-content'],
+    :root[data-hermes-glass] [data-slot='popover-content'],
+    /* 命令面板（Ctrl+K / Ctrl+P）：radix Content 无 data-slot，只能按 role 抓；
+       它核心用 --ui-chat-bubble-background 上色（和气泡滑条同源），归入悬浮窗后
+       以 elevated 混合覆盖——悬浮语义上确实属于"浮窗家族"（用户指定）。 */
+    :root[data-hermes-glass] [role='dialog'][aria-modal='true'] {
       background: color-mix(in srgb, var(--ui-bg-elevated) ${tl}%, transparent) !important;
+    }
+    /* 命令面板核心没给 backdrop 模糊（其他浮层都有），补上保持家族一致 */
+    :root[data-hermes-glass] [role='dialog'][aria-modal='true'] {
+      backdrop-filter: blur(12px) saturate(1.1);
+      -webkit-backdrop-filter: blur(12px) saturate(1.1);
     }
     /* 设置页这类大浮层卡片（OverlayView，核心标 data-glass-raised）：核心在
        raised 上下文里把 --ui-chat-surface-background 强制 max(94%, keep)——

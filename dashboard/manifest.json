@@ -1,0 +1,9 @@
+{
+  "name": "hermes-wallpaper-engine",
+  "label": "Wallpaper Engine",
+  "version": "0.1.0",
+  "description": "Render local Wallpaper Engine wallpapers (video + static frames) behind the chat.",
+  "icon": "Wallpaper",
+  "api": "plugin_api.py",
+  "tab": { "path": "/wallpaper-engine", "position": "end" }
+}

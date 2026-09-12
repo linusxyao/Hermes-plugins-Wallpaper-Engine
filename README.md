@@ -39,6 +39,11 @@ Full documentation below is in Chinese. 建议先读"功能一览"与"已知边�
 Hermes-plugins-Wallpaper-Engine/
 ├── README.md                 本文件
 ├── LICENSE                   MIT
+├── install.ps1               安装引擎（定位 Hermes 目录 + 部署/升级/禁用/启用/卸载）
+├── install.bat               ← 双击安装/升级（朋友就用这个）
+├── disable.bat               ← 双击临时禁用（数据保留）
+├── enable.bat                ← 双击恢复启用
+├── uninstall.bat             ← 双击卸载
 ├── catalog-entry/            官方插件目录的 YAML 条目草稿（提交素材，不随插件运行）
 ├── dashboard/                Python 后端（FastAPI，由 Hermes serve 挂载到
 │   │                         /api/plugins/hermes-wallpaper-engine/）
@@ -52,15 +57,25 @@ Hermes-plugins-Wallpaper-Engine/
 
 ## 安装
 
-**方式一（推荐，朋友间分发用）：一条命令自动安装**——在朋友电脑上打开 PowerShell 执行：
+**方式一（推荐，朋友间分发用）：双击 bat 即可**——把仓库下载/克隆到任意位置
+（不用 git 也行：GitHub 页面绿色 Code 按钮 → Download ZIP，解压），然后：
+
+| 双击这个 | 干什么 |
+|---|---|
+| `install.bat` | 安装 / 升级（自动定位 Hermes 目录；重复执行=升级，旧版自动备份，**上传过的壁纸自动迁回**） |
+| `disable.bat` | 临时禁用（插件整体移入 `disabled-plugins\` 暂存区，数据全保留） |
+| `enable.bat` | 恢复启用（从暂存区搬回） |
+| `uninstall.bat` | 卸载（有 Y/N 确认，删除插件目录） |
+
+四个入口共用同一引擎 `install.ps1`（也可在 PowerShell 直接带参数跑：
+`-Uninstall` / `-Disable` / `-Enable` / `-Force`）。若下载的文件被 Windows 标记
+"来自 Internet"拦截运行：右键 bat → 属性 → 解除锁定。
+
+不想下载任何东西的极客路线（在线直装）：
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/linusxyao/Hermes-plugins-Wallpaper-Engine/main/install.ps1 | iex
 ```
-
-脚本自动定位 Hermes 数据目录（`$env:HERMES_HOME` → `%LOCALAPPDATA%\hermes` → `~/.hermes`）、
-从 GitHub 下载仓库、部署两个半区；重复执行即升级（旧版自动备份，用户上传的壁纸自动迁回）；
-`.\install.ps1 -Uninstall` 一键卸载。已 clone 仓库的话直接在仓库里跑 `install.ps1` 也行。
 
 **方式二（手动）：** 把两个半区分别放进用户数据目录（Windows 为
 `%LOCALAPPDATA%\hermes\`，即 `~/.hermes`）：

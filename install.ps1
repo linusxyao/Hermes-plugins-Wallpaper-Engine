@@ -9,6 +9,8 @@
 
     参数：
       -Uninstall   卸载（删除两个安装目录）
+      -Disable     临时禁用（目录整体移入 disabled-plugins\，数据全保留）
+      -Enable      恢复被 -Disable 移出的插件
       -Force       升级时不生成 .bak 备份，直接覆盖
       -Branch      指定分支（默认 main）
 
@@ -20,7 +22,9 @@
 param(
     [string]$Branch = "main",
     [switch]$Force,
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [switch]$Disable,
+    [switch]$Enable
 )
 $ErrorActionPreference = "Stop"
 $Repo = "linusxyao/Hermes-plugins-Wallpaper-Engine"
@@ -43,12 +47,44 @@ if (-not $HermesHome) {
 }
 
 $DashDst = Join-Path $HermesHome "plugins\$Name\dashboard"
+$DashSrcRoot = Join-Path $HermesHome "plugins\$Name"
 $DeskDst = Join-Path $HermesHome "desktop-plugins\$Name"
+
+# ---------- 禁用/启用分支 ----------
+# 禁用 = 把两个安装目录整体挪到 disabled-plugins\ 暂存区（扫描根之外的位置）。
+# 之所以是"搬走"而不是"改名"：插件扫描按目录内 manifest 识别，改名不换位置未必
+# 能停用；搬到暂存区则确定不可见。用户数据（上传壁纸/缓存）原样跟着走，启用即还原。
+$StoreRoot = Join-Path $HermesHome "disabled-plugins\$Name"
+if ($Disable -or $Enable) {
+    $pairs = @(
+        @{ from = $DashSrcRoot; to = (Join-Path $StoreRoot "plugins") },
+        @{ from = $DeskDst;     to = (Join-Path $StoreRoot "desktop") }
+    )
+    if ($Enable) { $pairs = @(@{ from = (Join-Path $StoreRoot "plugins"); to = $DashSrcRoot }, @{ from = (Join-Path $StoreRoot "desktop"); to = $DeskDst }) }
+    $moved = 0
+    foreach ($pair in $pairs) {
+        if (Test-Path $pair.from) {
+            New-Item -ItemType Directory -Force -Path (Split-Path $pair.to) | Out-Null
+            Move-Item -Force $pair.from $pair.to
+            Write-Host "[>] $($pair.from)  ->  $($pair.to)"
+            $moved++
+        }
+    }
+    if ($moved -eq 0) { Write-Host "[i] 没有需要移动的目录（当前状态已满足）。" }
+    # 清掉搬空后残留的空骨架目录（enable 把子目录搬走后，暂存根会变成空壳）
+    foreach ($prune in @($StoreRoot, (Join-Path $HermesHome "disabled-plugins"))) {
+        if ((Test-Path $prune) -and -not (Get-ChildItem $prune)) { Remove-Item $prune }
+    }
+    $verb = if ($Disable) { "禁用" } else { "启用" }
+    Write-Host "[OK] $verb 完成（重启 Hermes 生效）。" -ForegroundColor Green
+    exit 0
+}
 
 # ---------- 卸载分支 ----------
 if ($Uninstall) {
     $pluginRoot = Join-Path $HermesHome "plugins\$Name"
-    foreach ($d in @($pluginRoot, $DeskDst)) {
+    # disabled-plugins 暂存区一并清掉，不留孤儿副本
+    foreach ($d in @($pluginRoot, $DeskDst, $StoreRoot)) {
         if (Test-Path $d) { Remove-Item -Recurse -Force $d; Write-Host "[-] 已删除 $d" }
     }
     Write-Host "[OK] 卸载完成（重启 Hermes 生效）。聊天区所有磨砂覆盖会随之自动还原。" -ForegroundColor Green
@@ -84,16 +120,33 @@ function Deploy-Dir($src, $dst) {
     return $bak
 }
 
+# 升级前先清理"被禁用状态"下的旧暂存副本——否则 enable.bat 会把旧版本搬回来。
+# 但暂存区里可能躺着用户上传的壁纸（禁用前传的）：先挪到临时目录保下来，删副本，
+# 部署完再落位（若当前实例自己带 uploads 则以当前为准）。
+$rescuedUploads = $null
+if (Test-Path $StoreRoot) {
+    $su = Join-Path $StoreRoot "plugins\dashboard\uploads"
+    if (Test-Path $su) {
+        $rescuedUploads = Join-Path $env:TEMP "wpe-uploads-keep"
+        if (Test-Path $rescuedUploads) { Remove-Item -Recurse -Force $rescuedUploads }
+        Move-Item $su $rescuedUploads
+    }
+    Remove-Item -Recurse -Force $StoreRoot
+    Write-Host "[i] 已清理暂存的禁用副本（新版已就位，稍后 enable 无需恢复旧版）"
+}
+
 $bakDash = Deploy-Dir (Join-Path $SrcRoot "dashboard") $DashDst
 Deploy-Dir (Join-Path $SrcRoot "desktop") $DeskDst | Out-Null
 
-# 用户上传过的壁纸属于用户数据：备份存在时迁回（纹理缓存会按需重建，不用迁）
-if ($bakDash) {
-    $oldUploads = Join-Path $bakDash "uploads"
-    if (Test-Path $oldUploads) {
-        Copy-Item -Recurse -Force $oldUploads (Join-Path $DashDst "uploads")
-        Write-Host "[i] 已迁移原有上传壁纸"
-    }
+# 用户上传过的壁纸属于用户数据：从 .bak（活跃实例被部署挪走的部分）迁回；
+# 禁装升级场景则回落到暂存区抢救出的副本。纹理缓存会按需重建，不用迁。
+$UploadDst = Join-Path $DashDst "uploads"
+if ($bakDash -and (Test-Path (Join-Path $bakDash "uploads"))) {
+    Copy-Item -Recurse -Force (Join-Path $bakDash "uploads") $UploadDst
+    Write-Host "[i] 已迁移原有上传壁纸"
+} elseif ($rescuedUploads -and -not (Test-Path $UploadDst)) {
+    Move-Item $rescuedUploads $UploadDst
+    Write-Host "[i] 已恢复禁用期间暂存的上传壁纸"
 }
 
 Write-Host ""

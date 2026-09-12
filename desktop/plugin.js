@@ -1093,6 +1093,14 @@ function frostCss(compA, tlA) {
       background: color-mix(in srgb, currentColor 18%, transparent) !important;
       color: var(--ui-text-primary);
     }
+    /* 通知 toast 堆栈（host.notify 弹出的卡片，用户 2026-09-12 收编）：核心
+       STACK_SURFACE 用 bg-popover/95 类上色，该类全应用唯 notifications.tsx
+       在用（grep 验证）——class 子串选择器精确锚定，不碰页面内 Alert 横幅。
+       核心自带 backdrop-blur-md，透明后保持磨砂。 */
+    :root[data-hermes-glass] div[class*='bg-popover/95'] {
+      background-color: color-mix(in srgb, var(--ui-bg-elevated) ${tl}%, transparent) !important;
+    }
+
     /* 会话翻页时的"滚动到底部/↓N 新消息"胶囊（.thread-jump-button）：核心用
        --composer-fill 上色（跟着输入框滑条偷偷走，用户 2026-09-12 才发现它）。
        显式收编进悬浮窗家族，语义归位。 */

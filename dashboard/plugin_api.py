@@ -489,6 +489,43 @@ def upload_delete(payload: dict | None = None) -> dict:
     return {"ok": True, "name": dest.name}
 
 
+THUMB_CACHE_DIR = Path(__file__).resolve().parent / "thumb_cache"
+_THUMB_CACHE_MAX = 600  # 全部壁纸 ~280，上限留一倍余量，LRU 按访问时间淘汰
+
+
+def _thumb_cache_key(src_path: str) -> Path:
+    """"缩略图磁盘缓存键：路径+修改时间散列——源文件更新则键自然失效。"""
+    import hashlib
+    try:
+        mtime = int(Path(src_path).stat().st_mtime)
+    except OSError:
+        mtime = 0
+    h = hashlib.sha1(f"{src_path}|{mtime}".encode("utf-8")).hexdigest()[:24]
+    return THUMB_CACHE_DIR / (h + ".jpg")
+
+
+def _thumb_cache_get(src_path: str) -> str | None:
+    f = _thumb_cache_key(src_path)
+    try:
+        if f.is_file():
+            os.utime(f)  # LRU 时间戳
+            return base64.b64encode(f.read_bytes()).decode("ascii")
+    except OSError:
+        pass
+    return None
+
+
+def _thumb_cache_put(src_path: str, b64: str) -> None:
+    try:
+        THUMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _thumb_cache_key(src_path).write_bytes(base64.b64decode(b64))
+        files = sorted(THUMB_CACHE_DIR.glob("*.jpg"), key=lambda p: p.stat().st_atime)
+        for stale in files[:-_THUMB_CACHE_MAX]:
+            stale.unlink(missing_ok=True)
+    except OSError:
+        pass  # 缓存尽力而为，失败回退即时生成
+
+
 @router.get("/inventory/previews")
 def previews(ids: str = Query(default="")) -> dict:
     wanted = [s.strip() for s in ids.split(",") if s.strip()][:THUMB_CAP_PER_REQUEST]
@@ -505,20 +542,71 @@ def previews(ids: str = Query(default="")) -> dict:
             order.append(wid)
             paths.append(src_path)
     out: dict[str, str] = {}
-    if paths:
+    miss_idx: list[int] = []
+    miss_paths: list[str] = []
+    for idx, (wid, src_path) in enumerate(zip(order, paths)):
+        cached = _thumb_cache_get(src_path)
+        if cached:
+            out[wid] = "data:image/jpeg;base64," + cached
+        else:
+            miss_idx.append(idx)
+            miss_paths.append(src_path)
+    if miss_paths:
         import importlib.util as _ilu
         _spec = _ilu.spec_from_file_location("_thumb_batch", Path(__file__).resolve().parent / "_thumb_batch.py")
         _tb = _ilu.module_from_spec(_spec)
         _spec.loader.exec_module(_tb)
-        results = _tb.make_thumbs_batch(paths)
-        for wid, src_path, b64 in zip(order, paths, results):
-            if b64:
-                out[wid] = "data:image/jpeg;base64," + b64
-            else:
+        results = _tb.make_thumbs_batch(miss_paths)
+        for wid, src_path, b64 in zip(
+                [order[i] for i in miss_idx], miss_paths, results):
+            if not b64:
                 uri = preview_data_uri(src_path)  # per-item fallback
                 if uri:
                     out[wid] = uri
+                continue
+            _thumb_cache_put(src_path, b64)
+            out[wid] = "data:image/jpeg;base64," + b64
     return {"previews": out}
+
+
+@router.post("/inventory/previews/warm")
+def previews_warm() -> dict:
+    """后台预热全部缩略图进磁盘缓存（前端进页面后发一次即可）：首次访问
+    之后，以后每次进选页都直接命中磁盘，不再逐批现生成。单飞锁防并发重复
+    预热；PowerShell 分批（每批 60 张）避免命令级超时。"""
+    import threading
+    global _WARM_RUNNING
+    if _WARM_RUNNING:
+        return {"ok": True, "already": True}
+    _WARM_RUNNING = True
+
+    def _run() -> None:
+        try:
+            inv = scan_wallpapers()
+            todo = [p for w in inv["wallpapers"]
+                    if (p := w.get("previewPath")) and Path(p).is_file()
+                    and not _thumb_cache_key(p).is_file()]  # 只补磁盘缓存缺的
+            if todo:
+                import importlib.util as _ilu
+                _spec = _ilu.spec_from_file_location("_thumb_batch", Path(__file__).resolve().parent / "_thumb_batch.py")
+                _tb = _ilu.module_from_spec(_spec)
+                _spec.loader.exec_module(_tb)
+                for i in range(0, len(todo), THUMB_CAP_PER_REQUEST):
+                    chunk = todo[i:i + THUMB_CAP_PER_REQUEST]
+                    for p, b64 in zip(chunk, _tb.make_thumbs_batch(chunk)):
+                        if b64:
+                            _thumb_cache_put(p, b64)
+        except Exception:
+            pass  # 预热是锦上添花，任何失败都不影响按需生成路径
+        finally:
+            global _WARM_RUNNING
+            _WARM_RUNNING = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"ok": True}
+
+
+_WARM_RUNNING = False
 
 
 

@@ -53,7 +53,7 @@ function defaults() {
   return {
     wallpaperId: '', type: '', mediaPath: '', previewPath: '', wallpaperTitle: '',
     opacity: 35, blur: 0, dim: 25, brightness: 100, panelOpacity: 85,
-    composerAlpha: 45, blurDim: 0, timelineAlpha: 55,
+    composerAlpha: 45, blurDim: 0, timelineAlpha: 55, fadeMs: 400,
     typeFilter: 'all', ratingFilter: 'all',
     fit: 'cover', posX: 50, posY: 50, scale: 100,
     hidden: [],
@@ -116,6 +116,7 @@ const usePreviews = () => useStoreValue(() => previews, pvListeners)
 // 上传成功只记名字，真正的跳转在库存刷新完成后由 locate-upload effect 执行。
 let _justUploaded = null
 let _hud = null
+let _warmSent = false
 
 function reloadInventory() {
   if (!_ctx) return
@@ -160,24 +161,38 @@ const BACKDROP_SLOT = 'wallpaper-backdrop'
 // 焦点柔化 blur)淡入，旧层同步淡出，形成真·交叉溶解。WAAPI 不占用
 // style/transform，动画落回后 fit 模式的样式不受影响；CSS transition
 // 作为 WAAPI 不可用时的降级兜底。 ----
-const WPE_ENTER = { duration: 620, easing: 'cubic-bezier(.22,1,.36,1)' }
-const WPE_LEAVE = { duration: 430, easing: 'ease-in', fill: 'forwards' }
+// 时长由"切换过渡"滑条驱动（fadeMs 100~1200，默认 400=标准档，线性放大）：
+// 旧层 leave 850ms 慢淡出，新层 enter 620ms 在旧层退场 ~55% 处错峰起步——
+// "快消失但没完全消失时新图浮现"的交叠溶解（用户定稿的叙事节奏）。
+function wpeTimings() {
+  const f = (getSettings().fadeMs ?? 400) / 400  // 400=标准档，滑条 100~1200
+  const leave = Math.round(850 * f)
+  // 新层在旧层退场进度 ~55% 处起步（两影交叠的错峰溶解）：旧图"快没完全
+  // 没掉"时新图已经浮现，视觉上比串行的 淡完→再显 连贯得多（用户定稿）。
+  return { enter: Math.round(620 * f), leave, enterDelay: Math.round(leave * 0.55) }
+}
 function wpeEnter(el, withBlur) {
+  const T = wpeTimings()
   try {
     const from = { opacity: 0, transform: 'scale(1.025)' }
     const to = { opacity: 1, transform: 'scale(1)' }
     if (withBlur) { from.filter = 'blur(7px)'; to.filter = 'blur(0)' }
-    el.animate([from, to], WPE_ENTER)
-  } catch { /* 降级：style.opacity=1 触发 260ms CSS transition 兜底 */ }
+    // delay 期间 fill:'backwards' 把元素按在 from 帧（透明）——没有
+    // setTimeout 那种"迟到前已按 style 显示"的竞态窗口。
+    el.animate([from, to], { duration: T.enter, delay: T.enterDelay,
+      easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' })
+  } catch { /* 老内核无 WAAPI：保持 style 现状（opacity 已是 1），只是没有动画 */ }
 }
 function wpeFadeOut(nodes) {
+  const T = wpeTimings()
   for (const x of nodes) {
     if (!x.isConnected || x.dataset.fading) continue
     x.dataset.fading = '1'
     try {
-      const a = x.animate([{ opacity: Number(getComputedStyle(x).opacity) || 1 }, { opacity: 0 }], WPE_LEAVE)
+      const a = x.animate([{ opacity: Number(getComputedStyle(x).opacity) || 1 }, { opacity: 0 }],
+        { duration: T.leave, easing: 'ease-in', fill: 'forwards' })
       a.onfinish = () => x.remove()
-      setTimeout(() => x.remove(), 900)  // onfinish 偶发不触发（窗口遮挡节流）的保险
+      setTimeout(() => x.remove(), T.leave + 500)  // onfinish 偶发不触发（遮挡节流）的保险
     } catch { x.remove() }
   }
 }
@@ -451,10 +466,18 @@ function startHealWatch() {
   _healTimer = setInterval(() => {
     const st = getSettings()
     if (!st.wallpaperId || (!st.mediaPath && !st.previewPath)) return
-    const media = backdropEl && backdropEl.isConnected && backdropEl.querySelector('img,video')
+    // 交叉淡入期间层里有新旧两枚媒体：巡检对象取【最后】一个（最新层），
+    // 旧层是正在淡出的过渡残影，不归它管。
+    const mediaList = backdropEl && backdropEl.isConnected ? backdropEl.querySelectorAll('img,video') : null
+    const media = mediaList && mediaList.length ? mediaList[mediaList.length - 1] : null
     if (!media) { applyBackdrop(st); return }
-    if (media.style.opacity === '0' && (media.tagName === 'IMG' || media.readyState >= 2)) {
-      media.style.opacity = '1'
+    // 强制显现卡死层。两条防误伤：①IMG 必须真解码完（complete+naturalWidth，
+    // 下载中不能提前揭示=半张图闪烁）②连续两轮巡检都卡住才救（≥6s），给
+    // load/playing 事件与 4s 强制显示留足余地。
+    if (media.style.opacity === '0') {
+      const decoded = media.tagName === 'IMG' ? (media.complete && media.naturalWidth > 0) : media.readyState >= 2
+      if (decoded && media.dataset.healseen) media.style.opacity = '1'
+      else if (decoded) media.dataset.healseen = '1'
     }
   }, 3000)
 }
@@ -467,7 +490,7 @@ const L = {
     title: 'Wallpaper Engine 聊天背景', count: n => `${n} 张壁纸`,
     current: t => '当前：' + t, clear: '清除',
     loading: '正在加载壁纸库…', empty: '没有可用的壁纸。请确认 Wallpaper Engine 已安装且工坊里有壁纸。',
-    opacity: '壁纸不透明度', blur: '模糊', dim: '暗化', brightness: '亮度', panel: '面板不透明度', blurDim: '失焦暗化',
+    opacity: '壁纸不透明度', blur: '模糊', dim: '暗化', brightness: '亮度', panel: '面板不透明度', blurDim: '失焦暗化', fadeMs: '切换过渡',
     composerAlpha: '输入框不透明度', timelineAlpha: '悬浮窗',
     fitLabel: '对齐方式', fitCover: '覆盖', fitContain: '填充', fitCenter: '居中', fitFill: '拉伸', fitFree: '自由', fitTile: '平铺',
     posLabel: '位置', scaleLabel: '缩放',
@@ -488,7 +511,7 @@ const L = {
     title: 'Wallpaper Engine Backdrop', count: n => `${n} wallpapers`,
     current: t => 'Current: ' + t, clear: 'Clear',
     loading: 'Loading Wallpaper Engine library…', empty: 'No playable wallpapers found.',
-    opacity: 'Opacity', blur: 'Blur', dim: 'Dim', brightness: 'Brightness', panel: 'Panel opacity', blurDim: 'Blur-dim',
+    opacity: 'Opacity', blur: 'Blur', dim: 'Dim', brightness: 'Brightness', panel: 'Panel opacity', blurDim: 'Blur-dim', fadeMs: 'Transition speed',
     composerAlpha: 'Composer opacity', timelineAlpha: 'Floating windows',
     fitLabel: 'Alignment', fitCover: 'Cover', fitContain: 'Fill', fitCenter: 'Center', fitFill: 'Stretch', fitFree: 'Free', fitTile: 'Tile',
     posLabel: 'Position', scaleLabel: 'Scale',
@@ -509,7 +532,7 @@ const L = {
     title: 'Wallpaper Engine チャット背景', count: n => `${n} 枚の壁紙`,
     current: t => '現在：' + t, clear: 'クリア',
     loading: '壁紙ライブラリを読み込み中…', empty: '利用可能な壁紙がありません。Wallpaper Engine がインストール済みでワークショップに壁紙があるか確認してください。',
-    opacity: '壁紙の不透明度', blur: 'ぼかし', dim: '暗さ', brightness: '明るさ', panel: 'パネルの不透明度', blurDim: '非アクティブ減光',
+    opacity: '壁紙の不透明度', blur: 'ぼかし', dim: '暗さ', brightness: '明るさ', panel: 'パネルの不透明度', blurDim: '非アクティブ減光', fadeMs: '切替速度',
     composerAlpha: '入力欄不透明度', timelineAlpha: 'フローティングウィンドウ',
     fitLabel: '配置', fitCover: 'カバー', fitContain: 'フィット', fitCenter: '中央', fitFill: '引き伸ばし', fitFree: 'フリー', fitTile: 'タイル',
     posLabel: '位置', scaleLabel: 'サイズ',
@@ -530,7 +553,7 @@ const L = {
     title: 'Wallpaper Engine 채팅 배경', count: n => `배경 ${n}개`,
     current: t => '현재: ' + t, clear: '지우기',
     loading: '배경 라이브러리 불러오는 중…', empty: '사용 가능한 배경이 없습니다. Wallpaper Engine이 설치되어 있고 워크숍에 배경이 있는지 확인하세요.',
-    opacity: '배경 불투명도', blur: '흐림', dim: '어둡게', brightness: '밝기', panel: '패널 불투명도', blurDim: '비활성 어둡게',
+    opacity: '배경 불투명도', blur: '흐림', dim: '어둡게', brightness: '밝기', panel: '패널 불투명도', blurDim: '비활성 어둡게', fadeMs: '전환 속도',
     composerAlpha: '입력창 불투명도', timelineAlpha: '플로팅 창',
     fitLabel: '정렬', fitCover: '커버', fitContain: '맞춤', fitCenter: '가운데', fitFill: '늘리기', fitFree: '자유', fitTile: '타일',
     posLabel: '위치', scaleLabel: '크기',
@@ -770,7 +793,9 @@ function WallpaperPicker({ mode }) {
   const hasMore = filtered.length > items.length
 
   useEffect(() => {
-    if (inv.loaded) loadPreviews(items.slice(0, 24).map(w => w.id))
+    // 首批拉齐整页（PAGE_SIZE=28）：曾写死 24，首屏尾部 4 张要等下一次
+    // effect 触发才出图，进来总有几个角是空卡。
+    if (inv.loaded) loadPreviews(items.slice(0, PAGE_SIZE).map(w => w.id))
   }, [typeFilter, ratingFilter, inv.loaded, page])
 
   // 自动定位（用户要求）：进入页面即跳转到"当前选中"的壁纸——先按需翻页
@@ -1009,6 +1034,8 @@ function WallpaperPicker({ mode }) {
             onChange: v => setSettings({ ...s, dim: v }) }),
           jsx(SliderRow, { St, label: t('blurDim'), value: s.blurDim ?? 0, min: 0, max: 60, unit: '%',
             onChange: v => setSettings({ ...s, blurDim: v }) }),
+          jsx(SliderRow, { St, label: t('fadeMs'), value: s.fadeMs ?? 400, min: 100, max: 1200, unit: 'ms',
+            onChange: v => setSettings({ ...s, fadeMs: v }) }),
           jsx(SliderRow, { St, label: t('brightness'), value: s.brightness, min: 40, max: 160, unit: '%',
             onChange: v => setSettings({ ...s, brightness: v }) }),
         ] }),
@@ -1510,6 +1537,13 @@ function ThemeAwarePicker() {
   const theme = useTheme()
   const mode = theme?.renderedMode === 'light' ? 'light' : 'dark'
   useEffect(() => { _pickerMounted = true }, [])
+  // 缩略图后台预热（用户：每次进页面都要等图加载）：首次进页面触发一次
+  // 全量磁盘预热——预热完成后所有缩略图走磁盘缓存，秒开。
+  useEffect(() => {
+    if (_warmSent || !_ctx) return
+    _warmSent = true
+    _ctx.rest('/inventory/previews/warm', { method: 'POST' }).catch(() => {})
+  }, [])
   return jsx(WallpaperPicker, { mode })
 }
 

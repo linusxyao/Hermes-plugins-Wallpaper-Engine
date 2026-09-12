@@ -112,6 +112,10 @@ function useStoreValue(get, ls) {
 const useInventory = () => useStoreValue(() => inventory, invListeners)
 const usePreviews = () => useStoreValue(() => previews, pvListeners)
 
+// 上传后跳转（批准的方案：不自动选中，但滚到新卡片并闪一下高亮）。
+// 上传成功只记名字，真正的跳转在库存刷新完成后由 locate-upload effect 执行。
+let _justUploaded = null
+
 function reloadInventory() {
   if (!_ctx) return
   _ctx.rest('/inventory?limit=0').then(inv => {
@@ -700,7 +704,10 @@ function WallpaperPicker({ mode }) {
 
   const filtered = inv.wallpapers
     .filter(w => !s.hidden.includes(w.id))
-    .filter(w => typeFilter === 'all' || w.type === typeFilter)
+    // "图片"档的值是 scene（WE 场景纹理），但它必须同时收录上传的图片
+    // （type=image）——否则上传的图永远藏在"图片"筛选外面（定位也找不到它）
+    .filter(w => typeFilter === 'all' || w.type === typeFilter
+      || (typeFilter === 'scene' && w.type === 'image'))
     .filter(w => ratingFilter === 'all' || w.contentrating.toLowerCase() === ratingFilter)
     .filter(w => w.type !== 'web')
   const items = filtered.slice(0, page * PAGE_SIZE)
@@ -726,6 +733,46 @@ function WallpaperPicker({ mode }) {
       el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     }, 120)
   }, [inv.loaded, s.wallpaperId, page, filtered.length])
+
+  // 上传后定位：库存刷新完成后，找到新上传的条目 → 若被当前筛选遮蔽就先把
+  // 筛选放开（类型归位、分级重置），翻到它所在页，平滑滚动 + 高亮闪两下。
+  // 与挂载定位共用滚动方式，但独立触发、可反复（每次上传都跳）。
+  useEffect(() => {
+    if (!inv.loaded || !_justUploaded) return
+    const stem = _justUploaded.name.replace(/\.[^.]+$/, '')
+    const slug = 'upload-' + stem.toLowerCase().replace(/ /g, '-').slice(0, 40)
+    let w = inv.wallpapers.find(x => x.id === slug) ||
+            inv.wallpapers.find(x => x.title === stem)
+    if (!w) return  // 库存还没刷出来（reload 在途），等下一次 inv 变更
+    // 被隐藏列表遮蔽 → 先解除并保留待跳转标记，等下一次渲染（filtered 更新后）再进本 effect
+    if (s.hidden.includes(w.id)) {
+      setSettings({ ...s, hidden: s.hidden.filter(x => x !== w.id) })
+      return
+    }
+    _justUploaded = null
+    // 被筛选遮蔽 → 放开到能看见它的组合（图片归"图片"档、视频归"视频"档）
+    const tNeeded = w.type === 'video' ? 'video' : (w.type === 'image' ? 'scene' : typeFilter)
+    if (typeFilter !== 'all' && typeFilter !== tNeeded) setTypeFilter(tNeeded)
+    if (ratingFilter !== 'all' && ratingFilter !== 'unrated') setRatingFilter('all')
+    const idx = filtered.findIndex(x => x.id === w.id)
+    if (idx >= 0) setPage(p => Math.max(p, Math.floor(idx / PAGE_SIZE) + 1))
+    setTimeout(() => {
+      const el = document.querySelector(`div[data-slot="wallpaper-gridwrap"] [data-wid="${CSS.escape(w.id)}"]`)
+      if (!el) return
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      // 高亮闪动用 Web Animations API：不依赖注入样式表，动画结束自动还原，
+      // 中途改选/滚动也不会留下脏样式
+      try {
+        el.animate([
+          { boxShadow: '0 0 0 0 rgba(0,0,0,0)' },
+          { boxShadow: `0 0 0 3px ${P.accent || '#4b8dff'}`, outline: '2px solid rgba(75,141,255,0.9)' },
+          { boxShadow: '0 0 0 0 rgba(0,0,0,0)', outline: '2px solid rgba(75,141,255,0)' },
+          { boxShadow: `0 0 0 3px ${P.accent || '#4b8dff'}`, outline: '2px solid rgba(75,141,255,0.9)' },
+          { boxShadow: '0 0 0 0 rgba(0,0,0,0)', outline: '2px solid rgba(75,141,255,0)' },
+        ], { duration: 1400, easing: 'ease-in-out' })
+      } catch { /* 老内核不支持 WAAPI：滚动已到位即可，闪动属锦上添花 */ }
+    }, 200)
+  }, [inv.loaded, inv.wallpapers, filtered.length, page])
 
   // Infinite scroll: sentinel enters viewport -> next page
   useEffect(() => {
@@ -822,6 +869,7 @@ function WallpaperPicker({ mode }) {
               timeoutMs: 120000,
             })).then(r => {
               if (!r?.ok) { host.notify({ kind: 'error', message: t('uploadFail') + (r?.detail || 'unknown') }); return }
+              _justUploaded = { name: r.name }
               reloadInventory()
               // 用户痛点："不知道保存到哪了"——toast 里直接给出落盘路径，
               // 并用 os.revealPath 在资源管理器中定位（复制式存储，源文件可随意删）

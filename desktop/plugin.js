@@ -134,8 +134,9 @@ function loadPreviews(ids) {
   }).catch(() => { /* thumbnails are decorative */ })
 }
 
-// 悬停预热（换壁纸提速的关键一环）：用户还没点击，就提前发起 resolve 并把图片
-// dataURI 拉进缓存。视频走 Range 流式播放本身很快，只有图片需要抢这个时间差。
+// Hover pre-warm (switching speed): resolve the wallpaper and, for images,
+// fetch the data URI into cache BEFORE the user clicks. Videos stream with
+// Range requests and are fast, so only images need the head start.
 const _prefetchInflight = new Set()
 function prefetchWallpaper(w) {
   if (!_ctx || w.type === 'web') return
@@ -197,8 +198,8 @@ function wpeFadeOut(nodes) {
   }
 }
 
-// 热重载安全：每次重载都生成全新模块实例，其 backdropEl 为 null。
-// 必须先认领页面已存在的壁纸层、清扫多余孤儿层——绝不允许两层壁纸叠加显示。
+// HOT-RELOAD SAFETY: each reload creates a fresh module instance whose
+// `backdropEl` is null. Adopt the existing layer, sweep orphans — never stack.
 function reclaimBackdropLayers() {
   const existing = document.querySelectorAll(`div[data-slot="${BACKDROP_SLOT}"]`)
   if (existing.length === 0) return null
@@ -209,10 +210,12 @@ function reclaimBackdropLayers() {
   return adopted
 }
 
-// 图片壁纸的加载通道：hermes-media:// 协议只流式支持音视频（不支持 jpg/png），
-// 网关图片路由又没法让裸 <img> 携带会话鉴权头。因此图片统一走插件自己的 /media
-// 接口取 base64 dataURI（路径经扫描器白名单校验，ctx.rest 自带鉴权头）再赋给
-// <img>。视频保持走 hermes-media://stream（支持 Range 断点的音视频流播）。
+// Scene/image wallpapers: hermes-media:// only streams AV extensions (no
+// jpg/png), and gateway image routes can't be used from a bare <img> (no
+// session-token header). So image wallpapers are fetched as base64 data URIs
+// through the plugin's own /media route (scanner-validated paths, ctx.rest
+// carries the auth header), then assigned to the <img>. Videos keep
+// hermes-media://stream (Range-capable AV streaming).
 const dataUriCache = new Map()
 
 function isAvPath(absPath) {
@@ -236,14 +239,17 @@ function fetchImageDataUri(absPath) {
   }).catch(() => null)
 }
 
-// 失焦明暗：DWM 会把失焦窗口的亚克力底衬提亮，观感就是"点了别的窗口壁纸变亮"。
-// 这里跟踪窗口焦点，失焦期间按 blurDim 设定值给暗化层加码（见下方 dimColor）。
+// FOCUS DIM: DWM paints inactive acrylic brighter than active acrylic, which
+// read as "the wallpaper got brighter when I clicked another window". Track
+// window focus and deepen the dim layer a notch while blurred.
 let _windowBlurred = false
 let _lastDimPct = 25
 
-// blurDim（用户滑条，默认 0）：失焦时暗化层额外加深的黑色百分比。
-// 这里曾硬编码 0.18 补偿 DWM 失焦提亮——低透明度设置下补偿过度，
-// 失焦反而整窗变暗（用户报告）。现默认关闭，需要补偿的用户自行拉滑条。
+// blurDim (user slider, default 0): how much EXTRA black the dim layer takes
+// on while the window is blurred. The old hardcoded +0.18 auto-compensation
+// for DWM's inactive-acrylic brightening OVER-compensated at low translucency
+// — the whole window visibly darkened on focus loss (user report). Off by
+// default now; anyone who wants the compensation can dial it in.
 let _blurDim = 0
 function dimColor(basePct) {
   const v = Math.min(basePct / 100 + (_windowBlurred ? _blurDim / 100 : 0), 0.85)
@@ -266,9 +272,8 @@ function refreshDim() {
   setDim(_lastDimPct)
 }
 
-// 对齐方式（与 Wallpaper Engine 官方对齐方式一一对应）：覆盖 cover /
-// 填充 contain / 拉伸 fill / 平铺 tile / 居中 center(原始尺寸) /
-// 自由 free(缩放+位置；历史存档值 custom 与之等价)。
+// Fit modes (Wallpaper Engine parity): cover / contain / fill(stretch) /
+// tile / center (original size) / custom free (scale + position).
 function mediaStyleFor(s) {
   const fit = s.fit || 'cover'
   const posX = (s.posX ?? 50) + '%'
@@ -386,27 +391,28 @@ function applyBackdrop(s) {
       // Any pause that isn't our teardown (isConnected check) -> play again.
       v.addEventListener('stalled', () => { if (v.isConnected) v.play().catch(() => {}) })
       v.addEventListener('pause', () => { if (v.isConnected) v.play().catch(() => {}) })
-      // 万一 'playing' 事件始终不来（流卡顿/自动播放策略抖动），图层会永远停在
-      // opacity:0——没有旧视频在场时首帧数据到达即揭示；4 秒后无条件强制揭示
-      // （看到一帧画面也比空窗强）。
+      // If 'playing' never fires (stall / autoplay hiccup) the layer would sit
+      // at opacity 0 forever — reveal on first data when nothing older is
+      // showing, and force-reveal after 4s regardless (a first frame beats a
+      // blank window).
       v.addEventListener('loadeddata', () => { if (!old && v.style.opacity !== '1') reveal() }, { once: true })
       setTimeout(() => { if (v.isConnected && v.style.opacity !== '1') reveal() }, 4000)
     } else {
-      // 视频已在场时只热更新对齐样式，不重载视频。
+      // Live-update fit on an existing video without reloading it.
       if (useTile) Object.assign(backdropVideo.style, { width: '100%', height: '100%', objectFit: 'cover' })
       else setMediaFitStyle(backdropVideo, s)
     }
     if (backdropVideo) backdropVideo.play?.().catch(() => {})
   } else {
-    // 图片壁纸：先取 dataURI（带鉴权）再上屏。异步但幂等——
-    // 同一路径重复调用全部命中缓存。
+    // Image wallpaper: fetch as data URI (auth'd), then paint. Async but
+    // idempotent — repeated calls with the same path are cache hits.
     const imgPath = s.previewPath || s.mediaPath
     fetchImageDataUri(imgPath).then(dataUrl => {
       if (!dataUrl || typeof document === 'undefined') return
       if (!backdropEl || !backdropEl.isConnected) return
       const same = Array.from(backdropEl.querySelectorAll('img')).find(x => x.dataset.src === imgPath)
       if (same) {
-        // 同一张图——只热更新对齐样式。
+        // Same image — live-update fit styles only.
         if (useTile) {
           Object.assign(same.style, {
             width: '100%', height: '100%',
@@ -416,14 +422,15 @@ function applyBackdrop(s) {
           same.removeAttribute('src')
         } else {
           setMediaFitStyle(same, s)
-          // 平铺模式摘掉了 src（它靠 backgroundImage 上色）——切出平铺必须装回，
-          // 否则样式清除后 img 没有可渲染的源。
+          // Tile mode strips src (it paints via backgroundImage) — put it back
+          // or the img renders nothing once tile styles are scrubbed.
           if (!same.getAttribute('src')) same.src = dataUrl
         }
         return
       }
-      // 交叉淡入：新图以隐藏态插入、盖在旧图上淡入，完成后才移除旧图。
-      // 新图真正可解码前旧壁纸始终可见——不再有"加载中露出底色"的空窗。
+      // CROSSFADE: append the new image hidden, fade it in over the old one,
+      // THEN remove the old. Old wallpaper stays visible until the new one
+      // is actually decodable — no more flash-to-background while loading.
       const el = document.createElement('img')
       el.dataset.src = imgPath
       el.style.cssText = 'position:absolute;inset:0;opacity:0;transition:opacity 260ms ease'
@@ -458,8 +465,8 @@ function applyBackdrop(s) {
   setDim(s.dim)
 }
 
-// 自愈看门狗：设置里有壁纸但图层丢了媒体（卡在隐藏态/被热重载孤立/被竞争弄丢）
-// ——3 秒内自动重建。兜住所有想不到的丢失路径。
+// Self-heal: settings say a wallpaper is active but the layer lost its media
+// (stuck hidden, orphaned by hot reload, raced away) — rebuild within 3s.
 let _healTimer = null
 function startHealWatch() {
   if (_healTimer || typeof window === 'undefined') return
@@ -588,10 +595,11 @@ const t = key => { const d = L[currentLang()] || L.zh; return d[key] ?? L.en[key
 
 // ---------------------------------------------------------------- theme-following palette
 
-// 亮/暗两套调色板，由 useTheme().renderedMode（屏幕实际呈现的模式）选定。
-// 两种下面板都保持高不透明度 + backdrop 模糊，壁纸永远不会干扰文字对比度。
-// 防闪烁设计：调色板是主题值的纯函数（不写 state、不动 DOM），切换主题/会话
-// 时原地重渲染，壁纸层绝不拆毁重建。
+// Light/dark palettes, chosen by useTheme().renderedMode (what's on screen).
+// Panels stay >= 90% opaque with backdrop blur in both modes — wallpaper
+// bleed never sets text contrast. FLICKER FIX: palettes are pure functions of
+// the theme value (no state writes, no DOM churn) so theme/session switches
+// re-render in place without the backdrop layer being torn down or rebuilt.
 function paletteFor(mode, panelOpacity) {
   const dark = mode !== 'light'
   const a = Math.min(Math.max(panelOpacity ?? 85, 0), 100) / 100
@@ -687,16 +695,16 @@ function buildStyles(P) {
   }
 }
 
-// 自绘下拉框（替代原生 <select>）：圆角、开合动效、配色随面板不透明度联动，
-// 选项文字完全可国际化。
+// Custom dropdown (native <select> replaced): rounded, animated open/close,
+// panel-following background, fully i18n-able options.
 function Dropdown({ P, value, options, onChange, title, maxWidth, minWidth }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
   const menuRef = useRef(null)
   useEffect(() => {
     if (!open) return
-    // 每次展开只播一次入场动画（用 callback ref 会在菜单打开期间
-    // 每次组件重渲染都重放一遍）。
+    // Mount animation once per open (a callback ref would re-run on every
+    // re-render of the picker while the menu stays open).
     if (menuRef.current && typeof menuRef.current.animate === 'function') {
       menuRef.current.animate(
         [{ opacity: 0, transform: 'translateY(-5px) scale(0.97)' }, { opacity: 1, transform: 'translateY(0) scale(1)' }],
@@ -775,7 +783,7 @@ function WallpaperPicker({ mode }) {
   const [page, setPage] = useState(1)
   const sentinelRef = useRef(null)
 
-  // 所有 hooks 必须在任何条件 return 之前（React #310 不变式）。
+  // ALL hooks before any conditional return (React #310 invariant).
   useEffect(() => { if (!inv.loaded) reloadInventory() }, [inv.loaded])
   useEffect(() => { setPage(1) }, [typeFilter, ratingFilter])
 
@@ -798,9 +806,9 @@ function WallpaperPicker({ mode }) {
     if (inv.loaded) loadPreviews(items.slice(0, PAGE_SIZE).map(w => w.id))
   }, [typeFilter, ratingFilter, inv.loaded, page])
 
-  // 自动定位（用户要求）：进入页面即跳转到"当前选中"的壁纸——先按需翻页
-  // 让它出现在网格里，再平滑滚动到视图中央。每次挂载只执行一次，
-  // 之后用户手动浏览不受打扰。
+  // Auto-locate (user request): entering the page jumps to the CURRENTLY
+  // SELECTED wallpaper — page forward so it exists in the grid, then scroll
+  // it centered. Runs once per mount; later manual browsing is untouched.
   const locatedRef = useRef(false)
   useEffect(() => {
     if (!inv.loaded || !s.wallpaperId || locatedRef.current) return
@@ -869,7 +877,7 @@ function WallpaperPicker({ mode }) {
     }, 200)
   }, [inv.loaded, inv.wallpapers, filtered.length, page])
 
-  // 无限滚动：哨兵进入视口 -> 加载下一页
+  // Infinite scroll: sentinel enters viewport -> next page
   useEffect(() => {
     const el = sentinelRef.current
     if (!el || !hasMore) return
@@ -908,8 +916,9 @@ function WallpaperPicker({ mode }) {
       jsx('span', { style: St.muted, children: t('count')(items.length) }),
     ] }),
 
-    // 布局（与用户约定）：左侧控件位置固定；易变的"当前壁纸"胶囊排在对齐
-    // 下拉之后；中间弹性空间；语言选择 + 上传永远钉在最右侧。
+    // Layout (user-agreed): fixed controls on the left, the volatile
+    // "current wallpaper" capsule right of alignment, elastic space, then
+    // language + upload on the far right.
     jsxs('div', { style: St.filterRow, children: [
       jsx('span', { style: St.filterLabel, children: t('filter') }),
       jsx(Dropdown, {
@@ -1076,13 +1085,17 @@ function ensureStyles() {
   scrollbarStyled = true
 }
 
-// ---------------------------------------------------------------- 聊天区去白/磨砂
-// 需求（用户 2026-09-11）：去掉用户消息背后的全宽实心遮带（现在完全透明、
-// 不留薄膜），给气泡补磨砂模糊（气泡填充透明度归内置"设置→外观→消息气泡"
-// 滑条管，两者不冲突），再给输入框一根插件专属滑条（composerAlpha 0-100，
-// 核心没有这项控制）。
-// 所有规则都限定在 :root[data-hermes-glass] 作用域内——非玻璃主题零影响。
-// 样式表随每次设置变更整表重写；插件停用/卸载时彻底移除，可完全还原。
+// ---------------------------------------------------------------- chat de-white (frost)
+// User (2026-09-11): kill the full-width mask strip behind a user message
+// (fully transparent now — no film left), add frosted blur to the bubbles
+// (fill opacity stays with the BUILT-IN Settings > Appearance lever so the
+// two never fight), and one user-adjustable lever for the input composer
+// (composerAlpha, 0..100) which core has no control for.
+// All rules are scoped to :root[data-hermes-glass] so opaque themes are
+// untouched; the sticky ROW's solid slab (core paints it via
+// --ui-chat-surface-background, re-opaquet under glass by [data-glass-opaque])
+// is dropped to a faint frost so it stops reading as pure white. Rewritten on
+// every settings change; removed entirely on deactivate/dispose.
 let bubbleStyleEl = null
 
 function frostCss(compA, tlA) {
@@ -1090,9 +1103,10 @@ function frostCss(compA, tlA) {
   const tl = Math.min(Math.max(tlA ?? 55, 0), 100)
   const tlTrack = Math.max(tl - 25, 8)  // 开关轨道保持比面板厚一点，滑到0时圆点才有落点
   return `
-    /* 用户消息的 sticky 整行：核心在它背后画了一条不透明遮带（滚动时遮挡穿行文字）。
-           用户要求彻底去掉——完全透明、不填不糊；滚动时的文字重叠是接受的代价。
-           行上方的 ::before 补缝板一并置透明。 */
+    /* Sticky user-message row: core paints an opaque mask strip behind the
+       bubble (hides text sliding underneath). User wants it GONE — fully
+       transparent, no fill, no blur; overlap-while-scrolling is the accepted
+       trade. Its ::before gap-patch goes too. */
     :root[data-hermes-glass] [data-slot='aui_user-message-root'] {
       background: transparent !important;
       backdrop-filter: none !important;
@@ -1101,14 +1115,15 @@ function frostCss(compA, tlA) {
     :root[data-hermes-glass] [data-slot='aui_user-message-root']::before {
       background: transparent !important;
     }
-    /* 气泡填充色的所有权在内置"设置→外观→消息气泡"滑条（--user-bubble-keep）。
-           插件曾覆盖它、导致内置滑条失效（用户报告的冲突）。终稿：插件绝不写气泡
-           background，只补该滑条给不了的 backdrop 模糊。 */
+    /* Bubble FILL belongs to the built-in Settings > Appearance > message-bubble
+       lever (--user-bubble-keep -> --dt-user-bubble). Overriding the fill here
+       made that lever dead (user-reported conflict) — so the plugin adds ONLY
+       the frosted blur the lever lacks. No background rule on the bubble. */
     :root[data-hermes-glass] .composer-human-message {
       backdrop-filter: blur(18px) saturate(1.25) !important;
       -webkit-backdrop-filter: blur(18px) saturate(1.25) !important;
     }
-    /* 助手侧小组件卡片（"N 个文件已更改"、clarify 追问）：磨砂+降浓度。 */
+    /* Assistant widget cards ("N files changed", clarify): frost + soften. */
     :root[data-hermes-glass] {
       --ui-widget-surface-background: color-mix(in srgb, var(--ui-bg-editor) 55%, transparent);
     }
@@ -1116,40 +1131,38 @@ function frostCss(compA, tlA) {
       backdrop-filter: blur(14px) saturate(1.15) !important;
       -webkit-backdrop-filter: blur(14px) saturate(1.15) !important;
     }
+    /* Code blocks inside assistant replies (CodeCard paints --ui-bg-editor
+       solid). Frosted so the wallpaper reads through like the user bubble. */
     /* 弹出浮层家族（对话框/下拉菜单/选择菜单/滚动时间线悬停窗）：核心同一规则
        画死 96% elevated 底。一根滑条统一驱动 alpha；核心自带 backdrop 模糊保留。
        键名沿用 timelineAlpha（持久化兼容），语义已扩为"全部浮层"。 */
-    /* 会话标签的悬浮关闭按钮✕（三轮拉锯后的最终版）。【去掉了
-       :root[data-hermes-glass] 前缀】——这些是几何/光学修正，与玻璃模式无关；
-       前缀曾使规则在非玻璃上下文静默失效（用户实测 marks=1111 但视觉无变化，
-       逐层排除后锁定此处）。内容：
-       ① content 区永久预留 ✕ 槽位（close 宽 + 10px 呼吸位），文字截断线
-         永远在 ✕ 之外——短标题（NEW SESSION）不靠 hover 遮罩也让位；
-       ② hover 遮罩渐隐带拉长至 1.35rem，长标题在 ✕ 边缘柔化收尾；
-       ③ ✕ 按钮改圆底胶囊 + 3px 呼吸位 + hover 圆片反馈；
-       ④ ✕ 字形 translateY(1px)：codicon 光学重心比大写字母高 ~1px 的补偿。 */
+    /* 会话标签 Chrome 式改造（用户 2026-09-13 定稿）：
+       ①标签间留缝：核心标签彼此紧贴（靠 1px border-l 分隔）。给每个标签
+         右缘加 4px 透明 margin，最后用一个负 margin 补偿条尾，避免＋按钮移位；
+       ②标签加宽：可关闭标签 min-width 52px→72px，短标题（NEW SESSION）按钮
+         明显变宽，文字与 ✕ 自然拉开；
+       ③✕ 呼吸位：槽位固定 = ✕宽(24px)+左右各 4px，与文字之间永远隔 ~14px；
+       ④✕ 光学下移 1px（codicon 字形重心偏高的补偿）+ hover 圆片；
+       ⑤切换动画：标签背景色/下划线 160ms 过渡（Chrome 式轻快渐变）。 */
+    [data-slot='pane-tab'] {
+      transition: background-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
+    }
     [data-slot='pane-tab'][data-closeable] {
       --pane-tab-close-width: 1.9rem;
+      min-width: 72px;
+      margin-right: 4px;
     }
     [data-slot='pane-tab'][data-closeable] > .pane-tab-content {
-      padding-right: calc(var(--pane-tab-close-width) + 10px) !important;
+      padding-right: calc(var(--pane-tab-close-width) + 2px) !important;
     }
     [data-slot='pane-tab'][data-closeable]:hover > .pane-tab-content {
-      -webkit-mask-image: linear-gradient(
-        to right,
-        #000 calc(100% - var(--pane-tab-close-width) - 1.35rem),
-        transparent calc(100% - var(--pane-tab-close-width))
-      );
-      mask-image: linear-gradient(
-        to right,
-        #000 calc(100% - var(--pane-tab-close-width) - 1.35rem),
-        transparent calc(100% - var(--pane-tab-close-width))
-      );
+      -webkit-mask-image: none;
+      mask-image: none;
     }
     [data-slot='pane-tab'] button[class*='pane-tab-close-width'] {
-      width: calc(var(--pane-tab-close-width) - 6px);
+      width: calc(var(--pane-tab-close-width) - 8px);
       border-radius: 9999px;
-      margin: 3px;
+      margin: 0 4px 0 0;
       transform: translateY(1px);
       transition: background-color 120ms ease, color 120ms ease;
     }
@@ -1226,16 +1239,15 @@ function frostCss(compA, tlA) {
       backdrop-filter: blur(14px) saturate(1.15) !important;
       -webkit-backdrop-filter: blur(14px) saturate(1.15) !important;
     }
-    /* 只做上圆角（8px，太圆会像药丸）：选中态的 accent 下划线是贴底内阴影，
-       下圆角会把它切掉（用户：下方不用弧度）。光泽全部走内阴影（外阴影会被标签条的
-       overflow 裁掉）：顶部 1px 高光线 + 选中芯片的 accent 底部辉光。
-       background 与 box-shadow 同为 200ms ease-out——aria-selected 翻转瞬间，
-       旧芯片的染色/下划线淡出、新芯片淡入，实现用户要的丝滑渐变切换。 */
-    /* 只做上圆角（8px，太圆会像药丸）：选中态的 accent 下划线是贴底内阴影，
-       下圆角会把它切掉（用户：下方不用弧度）。光泽全部走内阴影（外阴影会被标签条的
-       overflow 裁掉）：顶部 1px 高光线 + 选中芯片的 accent 底部辉光。
-       background 与 box-shadow 同为 200ms ease-out——aria-selected 翻转瞬间，
-       旧芯片的染色/下划线淡出、新芯片淡入，实现用户要的丝滑渐变切换。 */
+    /* Pane tabs (SESSIONS/BOTS and every zone tab): core paints each with
+       --glass-field, i.e. the body field mix — which tracks the global
+       transparency setting, so at low intensity it reads as an opaque grey
+       chip that no wallpaper shows through. Frosted fill instead. */
+    /* Linear pricing-tab pattern (awesome-design-md/linear.app): pill chips,
+       sheer idle fill, selection carried by an accent wash + the core's blue
+       underline — not by fill weight. margin-block floats the pill off the
+       strip; the hairline separators between full-height tabs are dropped
+       (they read as cracks between chips). */
     /* Top-only radius (8px, not the too-round pill): the selected tab's accent
    underline is an inset BOTTOM shadow — a bottom curve clips it (user: 下方不用弧度).
    Sheen is all-inner (outer shadows die in the strip's overflow clip): a top
@@ -1265,13 +1277,18 @@ function frostCss(compA, tlA) {
         inset 0 1px 0 rgba(255,255,255,0.18),
         inset 0 8px 14px -8px color-mix(in srgb, var(--ui-accent) 45%, transparent) !important;
     }
-    /* 标签背后的整条栏（PaneTabStrip）：极薄的磨砂，让芯片有"浮在条上"的层次。
-           注意 CSS 类名斜杠前要留一个字面反斜杠（模板字符串里必须双写）。 */
+    /* The strip BEHIND the tabs (PaneTabStrip): sheer frost so the chips
+       read as raised above the bar. CSS needs a literal backslash before the
+       slash (JS eats a single one in the template string). */
     :root[data-hermes-glass] .group\\/pane-header {
       background: color-mix(in srgb, var(--ui-bg-sidebar) calc((var(--wpe-panel-a, 0.85) - 0.6) * 100%), transparent) !important;
     }
-    /* 输入框没有内置透明度控制——由插件滑条驱动其填充色。 */
-    /* 输入框没有内置透明度控制——由插件滑条驱动其填充色。 */
+    /* Terminal: DO NOT touch --ui-terminal-surface-background. It feeds
+       resolveSurfaceColor() -> the xterm WebGL theme background; a translucent
+       value corrupts the opaque canvas fast-path (blank ghost pane, user
+       report 2026-09-11 — reverted same day). Terminal body stays opaque BY
+       DESIGN; only its DOM chrome above (tabs) is frosted. */
+    /* The input composer has no built-in lever — slider drives its fill. */
     :root[data-hermes-glass] [data-slot='composer-root'] {
       --composer-fill: color-mix(in srgb, var(--dt-card) ${c}%, transparent) !important;
     }
@@ -1293,7 +1310,7 @@ function applyFrostStyle(s) {
   // ride the same 面板不透明度 slider instead of a hardcoded number.
   const a = Math.min(Math.max(s.panelOpacity ?? 85, 0), 100) / 100
   document.documentElement.style.setProperty('--wpe-panel-a', String(a))
-  // 热重载时认领上一代实例的样式元素——绝不叠加两份样式表。
+  // Adopt the previous instance's element on hot reload — never stack.
   if (!bubbleStyleEl) bubbleStyleEl = document.getElementById('wpe-user-bubble-style')
   if (!bubbleStyleEl) {
     bubbleStyleEl = document.createElement('style')
@@ -1486,8 +1503,9 @@ export default {
       area: 'sidebar.nav',
       data: { path: '/wallpaper-engine', label: 'Wallpaper Engine', codicon: 'symbol-color' },
     })
-    // 命令面板（⌘K）第二入口：若侧栏行的点击因 app 侧启用时序竞争而没打开
-    // 页面，面板里的直达命令是不依赖那条路径的备用入口。
+    // ⌘K / command palette door: if the sidebar row's click misses the page
+    // (enable-timing race the app-side still has), the palette command is a
+    // second independent entry point.
     ctx.register({
       id: 'picker-open',
       area: PALETTE_AREA,
@@ -1507,15 +1525,16 @@ export default {
     reloadInventory()
     const stopWatchdog = watchPageOpen()
 
-    // 失焦补偿：窗口失焦期间加深暗化层（DWM 会提亮非活跃亚克力——插件碰不到
-    // DWM，只能在自己的层上对冲）。
+    // Focus dim compensation: deepen the dim layer while the window is
+    // inactive (DWM paints inactive acrylic brighter — plugin cannot touch
+    // DWM, so it counteracts on its own layer).
     const onBlur = () => { _windowBlurred = true; refreshDim() }
     const onFocus = () => { _windowBlurred = false; refreshDim(); if (backdropVideo) backdropVideo.play().catch(() => {}) }
     window.addEventListener('blur', onBlur)
     window.addEventListener('focus', onFocus)
 
-    // 把壁纸层清理同时注册为 ctx 销毁器——让框架自己的卸载路径（而非只有
-    // deactivate）也能移除图层，不留孤儿 DOM。
+    // Register the backdrop-layer cleanup as a ctx disposer too, so the
+    // framework's own teardown path (not just deactivate) removes the layer.
     ctx.onDispose(() => {
       stopHealWatch()
       listeners.delete(scheduleApply)
@@ -1559,7 +1578,8 @@ function ThemeAwarePicker() {
   return jsx(WallpaperPicker, { mode })
 }
 
-// 库存真正到达（或明确失败）后标记 loaded——加载卡死看门狗以此判定是否豁免。
+// Mark "loaded" once the inventory actually arrives (or definitively fails) —
+// the loading-stuck watchdog clears against this.
 function LoadingSentinel() {
   const inv = useInventory()
   useEffect(() => {
@@ -1568,13 +1588,15 @@ function LoadingSentinel() {
   return null
 }
 
-// ---------------------------------------------------------------- 页面打开看门狗
-// 已知的应用侧时序竞争（较新的桌面版）：启用插件后侧栏入口会出现，但点击
-// 有时要等下次重启才真正挂载页面。插件无法修复应用的路由表，退而求其次：
-// 检测到"用户点了页面却没出现"时，直接弹提示告诉唯一的解法（重启），
-// 而不是留下一次死点击。
-// 变体：页面挂载了但卡在"加载中"（后端没响应）——同样的解法、不同的文案，
-// 免得用户去排查根本不是问题的 Wallpaper Engine 设置。
+// ---------------------------------------------------------------- open-watchdog
+// Known app-side race (newer desktop builds): enabling the plugin shows the
+// sidebar row, but clicking it sometimes doesn't mount the page until the
+// next app restart. The plugin can't fix the app's route table, so it does
+// the next best thing: detect "user asked for the page, page never mounted"
+// and TELL them the one-step fix (restart) instead of leaving a dead click.
+// Variant: the page mounts but hangs on the loading line (backend didn't
+// answer) — same fix, different message so the user isn't told to fiddle
+// with Wallpaper Engine settings that aren't the problem.
 let _pickerMounted = false
 let _pickerLoaded = false
 let _reloadHintShown = false
@@ -1584,7 +1606,7 @@ function watchPageOpen() {
   const check = () => {
     if (_reloadHintShown) return
     if (_pickerMounted) {
-      // 页面壳已挂载但选页组件一直卡在加载态（后端没回话）？
+      // Page shell mounted but the picker never got past the loading state?
       if (_pickerLoaded) return
       _reloadHintShown = true
       host.notify({ kind: 'warning', message: t('reloadHintLoading') })
@@ -1600,7 +1622,7 @@ function watchPageOpen() {
     setTimeout(check, 1500)
   }
   window.addEventListener('hashchange', onHash)
-  // 冷启动直接落在本路由（不会有 hashchange）：启动时检查一次。
+  // Booted directly onto the route (no hashchange fires): check once.
   if (window.location.hash.includes('wallpaper-engine')) setTimeout(check, 2500)
   return () => window.removeEventListener('hashchange', onHash)
 }

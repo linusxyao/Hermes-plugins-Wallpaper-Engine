@@ -1137,40 +1137,16 @@ function frostCss(compA, tlA) {
     /* 弹出浮层家族（对话框/下拉菜单/选择菜单/滚动时间线悬停窗）：核心同一规则
        画死 96% elevated 底。一根滑条统一驱动 alpha；核心自带 backdrop 模糊保留。
        键名沿用 timelineAlpha（持久化兼容），语义已扩为"全部浮层"。 */
-    /* 会话标签 Chrome 式改造（用户 2026-09-13 定稿）：
-       ①标签间留缝：核心标签彼此紧贴（靠 1px border-l 分隔）。给每个标签
-         右缘加 4px 透明 margin，最后用一个负 margin 补偿条尾，避免＋按钮移位；
-       ②标签加宽：可关闭标签 min-width 52px→72px，短标题（NEW SESSION）按钮
-         明显变宽，文字与 ✕ 自然拉开；
-       ③✕ 呼吸位：槽位固定 = ✕宽(24px)+左右各 4px，与文字之间永远隔 ~14px；
-       ④✕ 光学下移 1px（codicon 字形重心偏高的补偿）+ hover 圆片；
-       ⑤切换动画：标签背景色/下划线 160ms 过渡（Chrome 式轻快渐变）。 */
-    [data-slot='pane-tab'] {
-      transition: background-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
+    /* 底部状态栏（网关/缓存命中率/GPU 等信息条，用户 2026-09-13 定稿）：
+       归"输入框不透明度"滑条管（窗口底部上下贴邻，浓度一致读起来才是一体），
+       滑条指哪打哪无地板——浓度用户自己定。12px 磨砂与文字提亮只是质感
+       补偿，不改变滑条设定的浓度。 */
+    [data-slot='statusbar'] {
+      background-color: color-mix(in srgb, var(--dt-card) ${c}%, transparent) !important;
+      backdrop-filter: blur(12px) saturate(1.1);
+      -webkit-backdrop-filter: blur(12px) saturate(1.1);
     }
-    [data-slot='pane-tab'][data-closeable] {
-      --pane-tab-close-width: 1.9rem;
-      min-width: 72px;
-      margin-right: 4px;
-    }
-    [data-slot='pane-tab'][data-closeable] > .pane-tab-content {
-      padding-right: calc(var(--pane-tab-close-width) + 2px) !important;
-    }
-    [data-slot='pane-tab'][data-closeable]:hover > .pane-tab-content {
-      -webkit-mask-image: none;
-      mask-image: none;
-    }
-    [data-slot='pane-tab'] button[class*='pane-tab-close-width'] {
-      width: calc(var(--pane-tab-close-width) - 8px);
-      border-radius: 9999px;
-      margin: 0 4px 0 0;
-      transform: translateY(1px);
-      transition: background-color 120ms ease, color 120ms ease;
-    }
-    [data-slot='pane-tab'] button[class*='pane-tab-close-width']:hover {
-      background: color-mix(in srgb, currentColor 18%, transparent) !important;
-      color: var(--ui-text-primary);
-    }
+
     /* 通知 toast 堆栈（host.notify 弹出的卡片，用户 2026-09-12 收编）：核心
        STACK_SURFACE 用 bg-popover/95 类上色，该类全应用唯 notifications.tsx
        在用（grep 验证）——class 子串选择器精确锚定，不碰页面内 Alert 横幅。

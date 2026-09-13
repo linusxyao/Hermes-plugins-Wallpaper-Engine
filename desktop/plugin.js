@@ -1119,25 +1119,22 @@ function frostCss(compA, tlA) {
     /* 弹出浮层家族（对话框/下拉菜单/选择菜单/滚动时间线悬停窗）：核心同一规则
        画死 96% elevated 底。一根滑条统一驱动 alpha；核心自带 backdrop 模糊保留。
        键名沿用 timelineAlpha（持久化兼容），语义已扩为"全部浮层"。 */
-    /* 会话标签的悬浮关闭按钮✕（用户 2026-09-12：✕ 跟文字贴太近）。核心机制：
-       hover 时对文字右缘做渐隐遮罩、✕ 占据右侧 --pane-tab-close-width。
-       插件只调参数不碰结构：加宽 ✕ 区域（1.5→1.9rem，字形中心离文字更远）、
-       渐隐带拉长（1→1.35rem，文字消得更早更柔和）、✕ 变圆底胶囊并
-       距右缘留 3px 呼吸位。 */
-    :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable] {
-      /* !important 加固：自定义属性声明同样可加，防核心样式表晚加载/同源特异度竞争 */
-      --pane-tab-close-width: 1.9rem !important;
+    /* 会话标签的悬浮关闭按钮✕（三轮拉锯后的最终版）。【去掉了
+       :root[data-hermes-glass] 前缀】——这些是几何/光学修正，与玻璃模式无关；
+       前缀曾使规则在非玻璃上下文静默失效（用户实测 marks=1111 但视觉无变化，
+       逐层排除后锁定此处）。内容：
+       ① content 区永久预留 ✕ 槽位（close 宽 + 10px 呼吸位），文字截断线
+         永远在 ✕ 之外——短标题（NEW SESSION）不靠 hover 遮罩也让位；
+       ② hover 遮罩渐隐带拉长至 1.35rem，长标题在 ✕ 边缘柔化收尾；
+       ③ ✕ 按钮改圆底胶囊 + 3px 呼吸位 + hover 圆片反馈；
+       ④ ✕ 字形 translateY(1px)：codicon 光学重心比大写字母高 ~1px 的补偿。 */
+    [data-slot='pane-tab'][data-closeable] {
+      --pane-tab-close-width: 1.9rem;
     }
-    /* 根治（用户诊断：标签太窄没给✕留位）：给内容区【永久】预留 ✕ 槽位——
-       padding-right 把文字截断线整体推到 ✕ 区之外，文字永远不可能贴到 ✕；
-       渐变遮罩从"唯一的让位手段"降级为锦上添花的柔化收尾。此前只在 :hover
-       时遮罩，非悬停时文字本来就可以压进 ✕ 区，一 hover ✕ 直接叠字上。 */
-    :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable] > .pane-tab-content {
-      /* 槽位 = ✕按钮(1.9rem) + 10px 文字↔✕呼吸位。首版只留了 4px——短标题
-         (NEW SESSION)不截断时 ✕ 看起来仍连在字尾（用户 2026-09-12 复报）。 */
+    [data-slot='pane-tab'][data-closeable] > .pane-tab-content {
       padding-right: calc(var(--pane-tab-close-width) + 10px) !important;
     }
-    :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable]:hover > .pane-tab-content {
+    [data-slot='pane-tab'][data-closeable]:hover > .pane-tab-content {
       -webkit-mask-image: linear-gradient(
         to right,
         #000 calc(100% - var(--pane-tab-close-width) - 1.35rem),
@@ -1149,28 +1146,16 @@ function frostCss(compA, tlA) {
         transparent calc(100% - var(--pane-tab-close-width))
       );
     }
-    /* ✕ 本体：核心按钮宽度挂在任意值类 w-(--pane-tab-close-width) 上，
-       用 class 子串精确锚定（比 .pointer-events-none 之类通用类安全），
-       改成圆底胶囊 + 距右缘 3px 呼吸位 + hover 圆片反馈。 */
-    :root[data-hermes-glass] [data-slot='pane-tab'] button[class*='pane-tab-close-width'] {
+    [data-slot='pane-tab'] button[class*='pane-tab-close-width'] {
       width: calc(var(--pane-tab-close-width) - 6px);
       border-radius: 9999px;
-      margin: 3px;  /* 四边留呼吸位：圆片不满高，hover 反馈才像个悬浮胶囊 */
-      transform: translateY(1px);  /* 光学补偿：codicon ✕ 字形重心比大写字母高 ~1px（用户实测） */
+      margin: 3px;
+      transform: translateY(1px);
       transition: background-color 120ms ease, color 120ms ease;
     }
-    :root[data-hermes-glass] [data-slot='pane-tab'] button[class*='pane-tab-close-width']:hover {
+    [data-slot='pane-tab'] button[class*='pane-tab-close-width']:hover {
       background: color-mix(in srgb, currentColor 18%, transparent) !important;
       color: var(--ui-text-primary);
-    }
-    /* 底部状态栏（网关/缓存命中率/GPU 等信息条）：用户定稿——完全由"输入框
-       不透明度"滑条直驱，不设地板（"想要啥样的我会自己调节"）。12px 磨砂与
-       文字提亮保留——它们不改变浓度，只保滑动过程中字面不发花。 */
-    :root[data-hermes-glass] [data-slot='statusbar'] {
-      background: color-mix(in srgb, var(--ui-bg-sidebar) ${c}%, transparent) !important;
-      backdrop-filter: blur(12px) saturate(1.1);
-      -webkit-backdrop-filter: blur(12px) saturate(1.1);
-      --ui-text-tertiary: color-mix(in srgb, var(--ui-text-secondary) 85%, transparent);
     }
     /* 通知 toast 堆栈（host.notify 弹出的卡片，用户 2026-09-12 收编）：核心
        STACK_SURFACE 用 bg-popover/95 类上色，该类全应用唯 notifications.tsx

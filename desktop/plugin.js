@@ -1102,6 +1102,7 @@ function frostCss(compA, tlA) {
   const c = Math.min(Math.max(compA ?? 45, 0), 100)
   const tl = Math.min(Math.max(tlA ?? 55, 0), 100)
   const tlTrack = Math.max(tl - 25, 8)  // 开关轨道保持比面板厚一点，滑到0时圆点才有落点
+  const menuA = Math.max(tl, 92)      // 选项菜单地板：列表盖在页面文字上，低于92%必叠字（用户2026-09-13定稿）
   return `
     /* Sticky user-message row: core paints an opaque mask strip behind the
        bubble (hides text sliding underneath). User wants it GONE — fully
@@ -1184,17 +1185,23 @@ function frostCss(compA, tlA) {
     :root[data-hermes-glass] .thread-jump-button {
       background: color-mix(in srgb, var(--ui-bg-elevated) ${tl}%, transparent) !important;
     }
+    /* 悬浮窗家族拆两档（用户 2026-09-13 定稿：设置里展开的下拉选项列表透出
+       下层文字，没法看）：
+       ①纯装饰浮层（时间线小窗/对话框/命令面板）——跟随滑条直驱；
+       ②选项菜单（dropdown/select/context-menu/popover——都是"列表盖在页面
+         文字上"的形态）——最低 92% 不透明地板，滑条只在 92~100 区间微调。
+         searchable-select（设置页模型/分级下拉=Popover+Command）落在
+         popover-content 上。 */
     :root[data-hermes-glass] [data-slot='thread-timeline-popover'],
     :root[data-hermes-glass] [data-slot='dialog-content'],
+    :root[data-hermes-glass] [role='dialog'][aria-modal='true'] {
+      background: color-mix(in srgb, var(--ui-bg-elevated) ${tl}%, transparent) !important;
+    }
     :root[data-hermes-glass] [data-slot='dropdown-menu-content'],
     :root[data-hermes-glass] [data-slot='select-content'],
     :root[data-hermes-glass] [data-slot='context-menu-content'],
-    :root[data-hermes-glass] [data-slot='popover-content'],
-    /* 命令面板（Ctrl+K / Ctrl+P）：radix Content 无 data-slot，只能按 role 抓；
-       它核心用 --ui-chat-bubble-background 上色（和气泡滑条同源），归入悬浮窗后
-       以 elevated 混合覆盖——悬浮语义上确实属于"浮窗家族"（用户指定）。 */
-    :root[data-hermes-glass] [role='dialog'][aria-modal='true'] {
-      background: color-mix(in srgb, var(--ui-bg-elevated) ${tl}%, transparent) !important;
+    :root[data-hermes-glass] [data-slot='popover-content'] {
+      background: color-mix(in srgb, var(--ui-bg-elevated) ${menuA}%, transparent) !important;
     }
     /* 命令面板核心没给 backdrop 模糊（其他浮层都有），补上保持家族一致 */
     :root[data-hermes-glass] [role='dialog'][aria-modal='true'] {

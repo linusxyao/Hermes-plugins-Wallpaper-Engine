@@ -1133,7 +1133,9 @@ function frostCss(compA, tlA) {
        渐变遮罩从"唯一的让位手段"降级为锦上添花的柔化收尾。此前只在 :hover
        时遮罩，非悬停时文字本来就可以压进 ✕ 区，一 hover ✕ 直接叠字上。 */
     :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable] > .pane-tab-content {
-      padding-right: calc(var(--pane-tab-close-width) + 4px) !important;
+      /* 槽位 = ✕按钮(1.9rem) + 10px 文字↔✕呼吸位。首版只留了 4px——短标题
+         (NEW SESSION)不截断时 ✕ 看起来仍连在字尾（用户 2026-09-12 复报）。 */
+      padding-right: calc(var(--pane-tab-close-width) + 10px) !important;
     }
     :root[data-hermes-glass] [data-slot='pane-tab'][data-closeable]:hover > .pane-tab-content {
       -webkit-mask-image: linear-gradient(
@@ -1154,6 +1156,7 @@ function frostCss(compA, tlA) {
       width: calc(var(--pane-tab-close-width) - 6px);
       border-radius: 9999px;
       margin: 3px;  /* 四边留呼吸位：圆片不满高，hover 反馈才像个悬浮胶囊 */
+      transform: translateY(1px);  /* 光学补偿：codicon ✕ 字形重心比大写字母高 ~1px（用户实测） */
       transition: background-color 120ms ease, color 120ms ease;
     }
     :root[data-hermes-glass] [data-slot='pane-tab'] button[class*='pane-tab-close-width']:hover {

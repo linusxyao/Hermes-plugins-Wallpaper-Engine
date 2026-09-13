@@ -1163,11 +1163,11 @@ function frostCss(compA, tlA) {
       background: color-mix(in srgb, currentColor 18%, transparent) !important;
       color: var(--ui-text-primary);
     }
-    /* 底部状态栏（网关/缓存命中率/GPU 等信息条）：用户定稿——归"输入框不
-       透明度"滑条管（它俩在窗口底部上下贴邻，浓度一致读起来才是一体）。
-       保留 62% 可读性地板（小字永不糊进壁纸）+ 12px 磨砂底 + 文字提亮。 */
+    /* 底部状态栏（网关/缓存命中率/GPU 等信息条）：用户定稿——完全由"输入框
+       不透明度"滑条直驱，不设地板（"想要啥样的我会自己调节"）。12px 磨砂与
+       文字提亮保留——它们不改变浓度，只保滑动过程中字面不发花。 */
     :root[data-hermes-glass] [data-slot='statusbar'] {
-      background: color-mix(in srgb, var(--ui-bg-sidebar) max(62%, ${c}%), transparent) !important;
+      background: color-mix(in srgb, var(--ui-bg-sidebar) ${c}%, transparent) !important;
       backdrop-filter: blur(12px) saturate(1.1);
       -webkit-backdrop-filter: blur(12px) saturate(1.1);
       --ui-text-tertiary: color-mix(in srgb, var(--ui-text-secondary) 85%, transparent);

@@ -1160,13 +1160,11 @@ function frostCss(compA, tlA) {
       background: color-mix(in srgb, currentColor 18%, transparent) !important;
       color: var(--ui-text-primary);
     }
-    /* 底部状态栏（网关/缓存命中率/GPU 等信息条）：核心用 --ui-sidebar-surface
-       上色、跟着面板滑条走——滑条拉低时 11px 小字直接糊进壁纸（用户 2026-09-12
-       点名看不清）。给它可读性地板：浓度 max(62%, 面板值) + 12px 磨砂底；
-       面板调高照常联动，只保证永不低于看清小字的浓度。文字同步从 tertiary
-       提到 secondary 的 85%，整条统一"半透但可读"。 */
+    /* 底部状态栏（网关/缓存命中率/GPU 等信息条）：用户定稿——归"输入框不
+       透明度"滑条管（它俩在窗口底部上下贴邻，浓度一致读起来才是一体）。
+       保留 62% 可读性地板（小字永不糊进壁纸）+ 12px 磨砂底 + 文字提亮。 */
     :root[data-hermes-glass] [data-slot='statusbar'] {
-      background: color-mix(in srgb, var(--ui-bg-sidebar) max(62%, calc(var(--wpe-panel-a, 0.85) * 100%)), transparent) !important;
+      background: color-mix(in srgb, var(--ui-bg-sidebar) max(62%, ${c}%), transparent) !important;
       backdrop-filter: blur(12px) saturate(1.1);
       -webkit-backdrop-filter: blur(12px) saturate(1.1);
       --ui-text-tertiary: color-mix(in srgb, var(--ui-text-secondary) 85%, transparent);

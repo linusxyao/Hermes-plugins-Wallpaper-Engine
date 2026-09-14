@@ -801,10 +801,10 @@ function WallpaperPicker({ mode }) {
   const hasMore = filtered.length > items.length
 
   useEffect(() => {
-    // 首批拉齐整页（PAGE_SIZE=28）：曾写死 24，首屏尾部 4 张要等下一次
-    // effect 触发才出图，进来总有几个角是空卡。
-    if (inv.loaded) loadPreviews(items.slice(0, PAGE_SIZE).map(w => w.id))
-  }, [typeFilter, ratingFilter, inv.loaded, page])
+    // 首屏进入就拉齐当前已渲染的所有卡片；不能依赖 hover 才补缩略图。
+    // 分页继续加载时，同一个 effect 会把新增页一并预热。
+    if (inv.loaded && items.length) loadPreviews(items.map(w => w.id))
+  }, [typeFilter, ratingFilter, inv.loaded, page, items.length])
 
   // Auto-locate (user request): entering the page jumps to the CURRENTLY
   // SELECTED wallpaper — page forward so it exists in the grid, then scroll

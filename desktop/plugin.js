@@ -1121,8 +1121,8 @@ function frostCss(compA, tlA) {
        made that lever dead (user-reported conflict) — so the plugin adds ONLY
        the frosted blur the lever lacks. No background rule on the bubble. */
     :root[data-hermes-glass] .composer-human-message {
-      backdrop-filter: blur(10px) saturate(1.1) !important;
-      -webkit-backdrop-filter: blur(10px) saturate(1.1) !important;
+      backdrop-filter: blur(4px) saturate(1.02) !important;
+      -webkit-backdrop-filter: blur(4px) saturate(1.02) !important;
     }
     /* Assistant widget cards ("N files changed", clarify): frost + soften. */
     :root[data-hermes-glass] {
@@ -1137,12 +1137,6 @@ function frostCss(compA, tlA) {
     /* 弹出浮层家族（对话框/下拉菜单/选择菜单/滚动时间线悬停窗）：核心同一规则
        画死 96% elevated 底。一根滑条统一驱动 alpha；核心自带 backdrop 模糊保留。
        键名沿用 timelineAlpha（持久化兼容），语义已扩为"全部浮层"。 */
-    /* 会话标签条只做可见性兜底：不修改核心的宽度、间距或折叠状态。
-       透明主题下标签条仍应保留布局，避免插件样式把它变成不可见层。 */
-    [data-slot='pane-tab-strip'] {
-      visibility: visible !important;
-    }
-
     /* 底部状态栏（网关/缓存命中率/GPU 等信息条，用户 2026-09-13 定稿）：
        归"输入框不透明度"滑条管（窗口底部上下贴邻，浓度一致读起来才是一体），
        滑条指哪打哪无地板——浓度用户自己定。12px 磨砂与文字提亮只是质感

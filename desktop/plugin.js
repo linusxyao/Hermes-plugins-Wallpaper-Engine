@@ -1305,7 +1305,7 @@ function applyFrostStyle(s) {
   // 热重载有没有生效）。规则标记 WPE_BUILD 递增即新版。
   try {
     const css = bubbleStyleEl.textContent
-    const marks = ['pane-tab-close-width) + 10px', 'translateY(1px)', 'thread-jump-button', 'bg-popover/95']
+    const marks = ['blur(4px) saturate(1.02)', "[data-slot='statusbar']", 'thread-jump-button', 'bg-popover/95']
     console.info('[WPE] frost ' + css.length + 'ch build20260913b marks=' +
       marks.map(m => css.includes(m) ? 1 : 0).join(''))
   } catch { /* 纯诊断，不影响功能 */ }
